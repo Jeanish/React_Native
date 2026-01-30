@@ -10,6 +10,10 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.middlew
 import { generalLimiter } from './middleware/rateLimiter.middleware';
 import authRoutes from './routes/auth.routes';
 import userRoutes from './routes/user.routes';
+import salonRoutes from './routes/salon.routes';
+import adminRoutes from './routes/admin.routes';
+import categoryRoutes from './routes/category.routes';
+import cityRoutes from './routes/city.routes';
 
 // Create Express app
 const app: Application = express();
@@ -73,12 +77,14 @@ app.get(`/api/${env.API_VERSION}`, (_req: Request, res: Response) => {
 // API routes
 app.use(`/api/${env.API_VERSION}/auth`, authRoutes);
 app.use(`/api/${env.API_VERSION}/users`, userRoutes);
+app.use(`/api/${env.API_VERSION}/salons`, salonRoutes);
+app.use(`/api/${env.API_VERSION}/categories`, categoryRoutes);
+app.use(`/api/${env.API_VERSION}/cities`, cityRoutes);
+app.use(`/api/${env.API_VERSION}/admin`, adminRoutes);
 // TODO: Add remaining routes
-// app.use(`/api/${env.API_VERSION}/salons`, salonRoutes);
 // app.use(`/api/${env.API_VERSION}/services`, serviceRoutes);
 // app.use(`/api/${env.API_VERSION}/appointments`, appointmentRoutes);
 // app.use(`/api/${env.API_VERSION}/queue`, queueRoutes);
-// app.use(`/api/${env.API_VERSION}/admin`, adminRoutes);
 // app.use(`/api/${env.API_VERSION}/notifications`, notificationRoutes);
 
 // 404 handler
