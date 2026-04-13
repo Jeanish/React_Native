@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
-import { createOTP, verifyOTP } from '../services/otp.service';
-import { sendOTPNotification } from '../services/fcm.service';
+import { verifyFirebaseToken } from '../config/firebase';
 import {
   registerCustomer,
   registerSalonAdmin,
@@ -14,54 +13,31 @@ import { logger } from '../utils/logger';
 import { asyncHandler } from '../middleware/errorHandler.middleware';
 
 /**
- * Send OTP to customer's phone via FCM
- * POST /api/v1/auth/send-otp
+ * Verify Firebase ID token and login/register customer
+ * POST /api/v1/auth/verify-firebase
  */
-export const sendOTP = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const { phone, fcmToken } = req.body;
-
-  // Generate and store OTP
-  const otp = await createOTP(phone);
-
-  // Send OTP via FCM push notification
-  const result = await sendOTPNotification(fcmToken, otp, phone);
-
-  if (!result.success) {
-    logger.error(`Failed to send OTP to ${phone}:`, result.error);
-    sendError(
-      res,
-      'Failed to send OTP. Please check your FCM token and try again',
-      'OTP_SEND_FAILED',
-      500
-    );
-    return;
-  }
-
-  logger.info(`OTP sent successfully to ${phone}`);
-  sendSuccess(res, SUCCESS_MESSAGES.OTP_SENT, {
-    phone,
-    expiresIn: '10 minutes',
-  });
-});
-
-/**
- * Verify OTP and login/register customer
- * POST /api/v1/auth/verify-otp
- */
-export const verifyOTPAndLogin = asyncHandler(
+export const verifyFirebase = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
-    const { phone, otp, fcmToken } = req.body;
+    const { idToken, fcmToken, firstName, lastName } = req.body;
 
-    // Verify OTP
-    const verification = await verifyOTP(phone, otp);
+    // Verify Firebase token
+    let decodedToken;
+    try {
+      decodedToken = await verifyFirebaseToken(idToken);
+    } catch (error) {
+      sendUnauthorized(res, 'Invalid Firebase ID token');
+      return;
+    }
 
-    if (!verification.isValid) {
-      sendError(res, verification.message, 'OTP_VERIFICATION_FAILED', 400);
+    const phone = decodedToken.phone_number;
+
+    if (!phone) {
+      sendError(res, 'Phone number not found in Firebase token', 'INVALID_TOKEN', 400);
       return;
     }
 
     // Register/login customer
-    const { user, tokens } = await registerCustomer(phone, fcmToken);
+    const { user, tokens } = await registerCustomer(phone, fcmToken, firstName, lastName);
 
     logger.info(`Customer logged in successfully: ${user._id}`);
     sendSuccess(
@@ -233,8 +209,7 @@ export const getCurrentUser = asyncHandler(
 );
 
 export default {
-  sendOTP,
-  verifyOTPAndLogin,
+  verifyFirebase,
   registerSalon,
   loginSalon,
   refreshToken,

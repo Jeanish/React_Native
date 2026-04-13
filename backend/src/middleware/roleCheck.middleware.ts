@@ -71,10 +71,7 @@ export const requireOwnerOrAdmin = (resourceUserIdField: string = 'userId') => {
         req.params[resourceUserIdField] || req.body[resourceUserIdField];
 
       // Allow if user is admin
-      if (
-        req.user.role === USER_ROLES.SUPER_ADMIN ||
-        req.user.role === USER_ROLES.SALON_ADMIN
-      ) {
+      if (req.user.role === USER_ROLES.SUPER_ADMIN) {
         next();
         return;
       }

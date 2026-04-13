@@ -97,20 +97,15 @@ export const fcmTokenSchema = Joi.string()
   });
 
 /**
- * Send OTP request validation
+ * Verify Firebase Auth request validation
  */
-export const sendOTPSchema = Joi.object({
-  phone: phoneSchema,
-  fcmToken: fcmTokenSchema,
-});
-
-/**
- * Verify OTP request validation
- */
-export const verifyOTPSchema = Joi.object({
-  phone: phoneSchema,
-  otp: otpSchema,
+export const verifyFirebaseSchema = Joi.object({
+  idToken: Joi.string().required().messages({
+    'any.required': 'Firebase ID token is required',
+  }),
   fcmToken: fcmTokenSchema.optional(),
+  firstName: nameSchema.optional(),
+  lastName: nameSchema.optional(),
 });
 
 /**

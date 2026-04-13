@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import {
-  sendOTP,
-  verifyOTPAndLogin,
+  verifyFirebase,
   registerSalon,
   loginSalon,
   refreshToken,
@@ -11,13 +10,12 @@ import {
 import { authenticate } from '../middleware/auth.middleware';
 import { validateBody } from '../middleware/validation.middleware';
 import {
-  sendOTPSchema,
-  verifyOTPSchema,
+  verifyFirebaseSchema,
   salonRegisterSchema,
   salonLoginSchema,
   refreshTokenSchema,
 } from '../utils/validators';
-import { otpLimiter, authLimiter } from '../middleware/rateLimiter.middleware';
+import { authLimiter } from '../middleware/rateLimiter.middleware';
 
 const router = Router();
 
@@ -25,15 +23,12 @@ const router = Router();
  * Customer Authentication Routes
  */
 
-// Send OTP to customer's phone via FCM
-router.post('/send-otp', otpLimiter, validateBody(sendOTPSchema), sendOTP);
-
-// Verify OTP and login/register customer
+// Verify Firebase ID token and login/register customer
 router.post(
-  '/verify-otp',
+  '/verify-firebase',
   authLimiter,
-  validateBody(verifyOTPSchema),
-  verifyOTPAndLogin
+  validateBody(verifyFirebaseSchema),
+  verifyFirebase
 );
 
 /**

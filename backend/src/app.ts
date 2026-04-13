@@ -14,6 +14,8 @@ import salonRoutes from './routes/salon.routes';
 import adminRoutes from './routes/admin.routes';
 import categoryRoutes from './routes/category.routes';
 import cityRoutes from './routes/city.routes';
+import serviceRoutes from './routes/service.routes';
+import appointmentRoutes from './routes/appointment.routes';
 
 // Create Express app
 const app: Application = express();
@@ -80,10 +82,10 @@ app.use(`/api/${env.API_VERSION}/users`, userRoutes);
 app.use(`/api/${env.API_VERSION}/salons`, salonRoutes);
 app.use(`/api/${env.API_VERSION}/categories`, categoryRoutes);
 app.use(`/api/${env.API_VERSION}/cities`, cityRoutes);
+app.use(`/api/${env.API_VERSION}/services`, serviceRoutes);
+app.use(`/api/${env.API_VERSION}/appointments`, appointmentRoutes);
 app.use(`/api/${env.API_VERSION}/admin`, adminRoutes);
 // TODO: Add remaining routes
-// app.use(`/api/${env.API_VERSION}/services`, serviceRoutes);
-// app.use(`/api/${env.API_VERSION}/appointments`, appointmentRoutes);
 // app.use(`/api/${env.API_VERSION}/queue`, queueRoutes);
 // app.use(`/api/${env.API_VERSION}/notifications`, notificationRoutes);
 
