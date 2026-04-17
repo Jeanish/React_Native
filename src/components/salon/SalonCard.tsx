@@ -99,10 +99,19 @@ export function SalonCard({ salon, onPress }: SalonCardProps) {
           <StarRating rating={salon.rating} />
         </View>
 
-        {/* Address */}
-        <Text style={styles.address} numberOfLines={1}>
-          📍 {salon.address}
-        </Text>
+        {/* Address + Distance */}
+        <View style={styles.addressRow}>
+          <Text style={styles.address} numberOfLines={1}>
+            📍 {salon.address}
+          </Text>
+          {salon.distanceKm !== undefined && (
+            <Text style={styles.distance}>
+              {salon.distanceKm < 1
+                ? `${Math.round(salon.distanceKm * 1000)}m`
+                : `${salon.distanceKm.toFixed(1)}km`}
+            </Text>
+          )}
+        </View>
 
         {/* Divider */}
         <View style={styles.divider} />
@@ -245,10 +254,26 @@ const styles = StyleSheet.create({
     fontWeight: Typography.bold,
     color: Colors.textPrimary,
   },
+  addressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing[3],
+  },
   address: {
+    flex: 1,
     fontSize: Typography.sm,
     color: Colors.textSecondary,
-    marginBottom: Spacing[3],
+    marginRight: Spacing[2],
+  },
+  distance: {
+    fontSize: Typography.xs,
+    fontWeight: Typography.bold,
+    color: Colors.navigationRed,
+    backgroundColor: Colors.navigationRedSurface,
+    paddingHorizontal: Spacing[2],
+    paddingVertical: 2,
+    borderRadius: Radius.full,
   },
   divider: {
     height: 1,

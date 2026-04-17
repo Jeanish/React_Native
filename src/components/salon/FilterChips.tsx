@@ -21,6 +21,7 @@ interface FilterChipsProps {
 
 const CHIPS: { id: FilterChip; label: string }[] = [
   { id: 'all', label: Strings.home.filters.all },
+  { id: 'near_me', label: '📍 Near Me' },
   { id: 'available_now', label: Strings.home.filters.availableNow },
   { id: 'low_wait', label: Strings.home.filters.lowWait },
   { id: 'top_rated', label: Strings.home.filters.topRated },
