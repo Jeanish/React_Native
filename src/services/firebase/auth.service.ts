@@ -1,38 +1,61 @@
 /**
  * TrimCity — Authentication Service
- * Phone OTP login via Firebase Auth (supports +91 Indian numbers).
- * Security: rate limiting awareness, input validation before API call.
+ * Phone OTP via @react-native-firebase/auth (native module).
+ *
+ * Why native module instead of web SDK?
+ *   The web Firebase SDK requires RecaptchaVerifier which needs a browser DOM.
+ *   @react-native-firebase/auth handles app-attestation natively (no DOM needed).
+ *   It is 100% FREE — Firebase Phone Auth has no charge up to 10,000 SMS/month.
+ *
+ * Setup (one-time):
+ *   npm install @react-native-firebase/app @react-native-firebase/auth
+ *   cd ios && pod install
+ *   Place google-services.json  → android/app/google-services.json
+ *   Place GoogleService-Info.plist → ios/<ProjectName>/GoogleService-Info.plist
+ *   Firebase Console → Authentication → Sign-in method → Enable Phone
  */
-import {
-  PhoneAuthProvider,
-  signInWithCredential,
-  signOut as firebaseSignOut,
-  onAuthStateChanged,
-  User,
-  RecaptchaVerifier,
-  signInWithPhoneNumber,
-} from 'firebase/auth';
+import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import {
   doc,
   getDoc,
   setDoc,
   updateDoc,
-  serverTimestamp,
 } from 'firebase/firestore';
-import { auth, db, Collections } from './config';
+import { db, Collections } from './config';
 import type { AppUser, UserRole, ServiceResult } from '../../types';
 import { sanitizePhoneNumber } from '../security/sanitizer';
 import { validateIndianPhone } from '../security/validator';
 
+// ─── Dev Bypass ───────────────────────────────────────────────────────────────
+// In development, set DEV_BYPASS = true to skip real OTP entirely.
+// Enter code "DEV999" in the OTP screen to proceed as a mock user.
+const DEV_BYPASS = __DEV__ && true; // ← flip to false when you want real OTP
+const DEV_BYPASS_CODE = '999977';
+
+// ─── Module-level confirmation store ─────────────────────────────────────────
+// Firebase ConfirmationResult objects can't be serialised into nav params.
+// Store it here between PhoneScreen → OTPScreen.
+let _pendingConfirmation: FirebaseAuthTypes.ConfirmationResult | null = null;
+let _devBypassPhone: string | null = null;
+
+export function setPendingConfirmation(c: FirebaseAuthTypes.ConfirmationResult) {
+  _pendingConfirmation = c;
+}
+export function getPendingConfirmation() {
+  return _pendingConfirmation;
+}
+export function clearPendingConfirmation() {
+  _pendingConfirmation = null;
+}
+
 // ─── Send OTP ─────────────────────────────────────────────────────────────────
 
 /**
- * Sends OTP to a +91 Indian phone number.
- * Returns verificationId used to confirm OTP.
+ * Sends a 6-digit OTP to the given +91 number via Firebase Phone Auth.
+ * Firebase handles the SMS — zero cost up to 10,000/month on Spark plan.
  */
 export async function sendOTP(
   phoneNumber: string,
-  recaptchaVerifier: RecaptchaVerifier,
 ): Promise<ServiceResult<string>> {
   try {
     const cleaned = sanitizePhoneNumber(phoneNumber);
@@ -41,43 +64,95 @@ export async function sendOTP(
     }
 
     const fullPhone = `+91${cleaned}`;
-    const confirmationResult = await signInWithPhoneNumber(
-      auth,
-      fullPhone,
-      recaptchaVerifier,
-    );
-    return { data: confirmationResult.verificationId };
-  } catch (err: any) {
-    console.error('[AuthService] sendOTP error:', err);
-    if (err.code === 'auth/too-many-requests') {
-      return { error: 'Too many attempts. Please try again later.' };
+
+    // ── DEV BYPASS ────────────────────────────────────────────────────────────
+    if (DEV_BYPASS) {
+      _devBypassPhone = fullPhone;
+      console.log('====================================');
+      console.log('[DEV BYPASS] OTP skipped for:', fullPhone);
+      console.log('[DEV BYPASS] Enter code →', DEV_BYPASS_CODE, '← in OTP screen');
+      console.log('====================================');
+      return { data: fullPhone };
     }
-    return { error: 'Failed to send OTP. Please check your number and try again.' };
+    // ─────────────────────────────────────────────────────────────────────────
+
+    console.log('[AuthService] Sending OTP to:', fullPhone);
+    const confirmation = await auth().signInWithPhoneNumber(fullPhone);
+    console.log('[AuthService] OTP sent successfully to:', fullPhone);
+    setPendingConfirmation(confirmation);
+
+    return { data: fullPhone };
+  } catch (err: any) {
+    console.error('[AuthService] sendOTP error code:', (err as any).code);
+    console.error('[AuthService] sendOTP error full:', JSON.stringify(err, null, 2));
+
+    if (err.code === 'auth/too-many-requests') {
+      return { error: 'Too many attempts. Please wait a few minutes and try again.' };
+    }
+    if (err.code === 'auth/invalid-phone-number') {
+      return { error: 'Invalid phone number format.' };
+    }
+    if (err.code === 'auth/billing-not-enabled') {
+      return { error: 'Billing not enabled. Use DEV_BYPASS mode or add a test number in Firebase Console.' };
+    }
+    return { error: `Failed to send OTP. Code: ${err.code ?? 'unknown'}` };
   }
 }
 
 // ─── Verify OTP ───────────────────────────────────────────────────────────────
 
+/**
+ * Confirms the 6-digit OTP the user entered.
+ * Uses the ConfirmationResult stored by sendOTP().
+ */
 export async function verifyOTP(
-  verificationId: string,
+  _verificationId: string, // kept for API compatibility; native uses stored confirmation
   otp: string,
   role: UserRole,
 ): Promise<ServiceResult<AppUser>> {
   try {
-    const credential = PhoneAuthProvider.credential(verificationId, otp);
-    const userCredential = await signInWithCredential(auth, credential);
-    const firebaseUser = userCredential.user;
+    console.log('[AuthService] Verifying OTP:', otp, 'for id:', _verificationId);
 
-    // Upsert user document in Firestore
-    const appUser = await upsertUserDocument(firebaseUser, role);
+    // ── DEV BYPASS ────────────────────────────────────────────────────────────
+    if (DEV_BYPASS && otp === DEV_BYPASS_CODE) {
+      console.log('[DEV BYPASS] Code accepted — signing in anonymously as dev user');
+      const cred = await auth().signInAnonymously();
+      const devUser: AppUser = {
+        uid: cred.user.uid,
+        phone: _devBypassPhone ?? '+910000000000',
+        name: 'Dev User',
+        role,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      _devBypassPhone = null;
+      console.log('[DEV BYPASS] Signed in as:', devUser.uid);
+      return { data: devUser };
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const confirmation = getPendingConfirmation();
+    if (!confirmation) {
+      return { error: 'Session expired. Please request a new OTP.' };
+    }
+
+    const userCredential = await confirmation.confirm(otp);
+    clearPendingConfirmation();
+
+    if (!userCredential?.user) {
+      return { error: 'Verification failed. Please try again.' };
+    }
+
+    const appUser = await upsertUserDocument(userCredential.user, role);
     return { data: appUser };
   } catch (err: any) {
     console.error('[AuthService] verifyOTP error:', err);
+
     if (err.code === 'auth/invalid-verification-code') {
       return { error: 'Invalid OTP. Please check and try again.' };
     }
     if (err.code === 'auth/code-expired') {
-      return { error: 'OTP expired. Please request a new one.' };
+      return { error: 'OTP has expired. Please request a new one.' };
     }
     return { error: 'Verification failed. Please try again.' };
   }
@@ -86,22 +161,19 @@ export async function verifyOTP(
 // ─── Upsert User Document ─────────────────────────────────────────────────────
 
 async function upsertUserDocument(
-  firebaseUser: User,
+  firebaseUser: FirebaseAuthTypes.User,
   role: UserRole,
 ): Promise<AppUser> {
   const userRef = doc(db, Collections.USERS, firebaseUser.uid);
   const existing = await getDoc(userRef);
-
   const now = Date.now();
 
   if (existing.exists()) {
-    // Update FCM token and last seen
     const data = existing.data() as AppUser;
     await updateDoc(userRef, { updatedAt: now });
     return { ...data, updatedAt: now };
   }
 
-  // Create new user
   const newUser: AppUser = {
     uid: firebaseUser.uid,
     phone: firebaseUser.phoneNumber ?? '',
@@ -148,11 +220,14 @@ export async function updateUserProfile(
 // ─── Sign Out ─────────────────────────────────────────────────────────────────
 
 export async function signOut(): Promise<void> {
-  await firebaseSignOut(auth);
+  clearPendingConfirmation();
+  await auth().signOut();
 }
 
 // ─── Auth State Listener ──────────────────────────────────────────────────────
 
-export function onAuthStateChange(callback: (user: User | null) => void) {
-  return onAuthStateChanged(auth, callback);
+export function onAuthStateChange(
+  callback: (user: FirebaseAuthTypes.User | null) => void,
+) {
+  return auth().onAuthStateChanged(callback);
 }

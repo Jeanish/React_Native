@@ -1,45 +1,47 @@
 /**
- * Sample React Native App
- * https://github.com/facebook/react-native
+ * TrimCity — Root Application Entry Point
  *
- * @format
+ * Bootstraps:
+ *   • GestureHandlerRootView (react-native-gesture-handler)
+ *   • SafeAreaProvider
+ *   • Toast notifications
+ *   • Auth state listener (useAuth hook)
+ *   • RootNavigator (handles Auth / Customer / Owner routing)
  */
+import React, { useEffect } from 'react';
+import { StyleSheet, LogBox } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Toast from 'react-native-toast-message';
+import { RootNavigator } from './src/navigation';
+import { useAuth } from './src/hooks/useAuth';
 
-import { NewAppScreen } from '@react-native/new-app-screen';
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+// Suppress known noisy RN warnings in dev
+LogBox.ignoreLogs([
+  'Non-serializable values were found in the navigation state',
+  'Require cycle',
+]);
 
-function App() {
-  const isDarkMode = useColorScheme() === 'dark';
-
-  return (
-    <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <AppContent />
-    </SafeAreaProvider>
-  );
+// ── Auth Bootstrap ────────────────────────────────────────────────────────────
+function AuthBootstrap() {
+  // Initialises Firebase auth listener and hydrates the auth store
+  useAuth();
+  return null;
 }
 
-function AppContent() {
-  const safeAreaInsets = useSafeAreaInsets();
-
+// ── App ───────────────────────────────────────────────────────────────────────
+export default function App() {
   return (
-    <View style={styles.container}>
-      <NewAppScreen
-        templateFileName="App.tsx"
-        safeAreaInsets={safeAreaInsets}
-      />
-    </View>
+    <GestureHandlerRootView style={styles.root}>
+      <SafeAreaProvider>
+        <AuthBootstrap />
+        <RootNavigator />
+        <Toast />
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  root: { flex: 1 },
 });
-
-export default App;

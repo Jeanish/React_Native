@@ -33,7 +33,7 @@ export function AuthNavigator() {
       <Stack.Screen
         name="OTP"
         component={OTPScreen}
-        options={{ title: 'Verify Number' }}
+        options={{ headerShown: false }}
       />
     </Stack.Navigator>
   );

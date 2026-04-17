@@ -231,6 +231,95 @@ export async function toggleSalonOpen(
   }
 }
 
+// ─── Admin: Fetch ALL Salons (including unverified) ──────────────────────────
+
+export function subscribeToAllSalonsAdmin(
+  onData: (salons: Salon[]) => void,
+  onError?: (err: Error) => void,
+): Unsubscribe {
+  const q = query(
+    collection(db, Collections.SALONS),
+    orderBy('createdAt', 'desc'),
+    limit(200),
+  );
+  return onSnapshot(
+    q,
+    snap => onData(snap.docs.map(d => ({ ...d.data(), salonId: d.id } as Salon))),
+    err => { console.error('[SalonService] subscribeToAllSalonsAdmin error:', err); onError?.(err); },
+  );
+}
+
+// ─── Admin: Verify / Reject Salon ─────────────────────────────────────────────
+
+export async function verifySalon(
+  salonId: string,
+  isVerified: boolean,
+): Promise<ServiceResult<void>> {
+  try {
+    await updateDoc(doc(db, Collections.SALONS, salonId), {
+      isVerified,
+      updatedAt: Date.now(),
+    });
+    return {};
+  } catch (err) {
+    console.error('[SalonService] verifySalon error:', err);
+    return { error: 'Failed to update verification.' };
+  }
+}
+
+// ─── Admin: Delete Salon ──────────────────────────────────────────────────────
+
+export async function adminDeleteSalon(salonId: string): Promise<ServiceResult<void>> {
+  try {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, Collections.SALONS, salonId));
+    await batch.commit();
+    return {};
+  } catch (err) {
+    console.error('[SalonService] adminDeleteSalon error:', err);
+    return { error: 'Failed to delete salon.' };
+  }
+}
+
+// ─── Admin: Create Salon (immediately verified) ───────────────────────────────
+
+export async function adminCreateSalon(
+  salonData: Omit<Salon, 'salonId' | 'seatedNow' | 'waitingNow' | 'rating' | 'ratingCount' | 'createdAt' | 'updatedAt'>,
+): Promise<ServiceResult<string>> {
+  try {
+    const newRef = doc(collection(db, Collections.SALONS));
+    const now = Date.now();
+    const newSalon: Salon = {
+      salonId: newRef.id,
+      seatedNow: 0,
+      waitingNow: 0,
+      rating: 0,
+      ratingCount: 0,
+      createdAt: now,
+      updatedAt: now,
+      ...salonData,
+      name: sanitizeText(salonData.name),
+      address: sanitizeText(salonData.address),
+      isVerified: true, // admin-created salons are auto-verified
+    };
+    await setDoc(newRef, newSalon);
+
+    // Update city stats
+    const statsRef = doc(db, Collections.CITY_STATS, DocIds.CITY_STATS);
+    const statsSnap = await getDoc(statsRef);
+    if (statsSnap.exists()) {
+      await updateDoc(statsRef, { totalSalons: increment(1), updatedAt: now });
+    } else {
+      await setDoc(statsRef, { totalSalons: 1, openNow: 0, totalSeated: 0, totalWaiting: 0, updatedAt: now });
+    }
+
+    return { data: newRef.id };
+  } catch (err) {
+    console.error('[SalonService] adminCreateSalon error:', err);
+    return { error: 'Failed to create salon.' };
+  }
+}
+
 // ─── Defaults ─────────────────────────────────────────────────────────────────
 
 function defaultWorkingHours() {

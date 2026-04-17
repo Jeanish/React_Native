@@ -134,7 +134,8 @@ export type FilterChip =
   | 'top_rated'
   | 'men'
   | 'women'
-  | 'unisex';
+  | 'unisex'
+  | 'near_me';
 
 export interface SalonFilters {
   search: string;
@@ -173,6 +174,16 @@ export type OwnerTabParamList = {
   Dashboard: undefined;
   SalonSetup: undefined;
   BookingMgmt: undefined;
+};
+
+export type AdminTabParamList = {
+  AdminSalons: undefined;
+  AdminAdd: undefined;
+};
+
+export type AdminStackParamList = {
+  AdminTabs: undefined;
+  AdminEditSalon: { salonId: string };
 };
 
 // ─── API / Service ────────────────────────────────────────────────────────────

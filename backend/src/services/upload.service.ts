@@ -2,12 +2,13 @@ import { v2 as cloudinary } from 'cloudinary';
 import { Request } from 'express';
 import multer from 'multer';
 import { Readable } from 'stream';
+import { env } from '../config/environment';
 
 // Configure Cloudinary
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+  cloud_name: env.CLOUDINARY_CLOUD_NAME,
+  api_key: env.CLOUDINARY_API_KEY,
+  api_secret: env.CLOUDINARY_API_SECRET,
 });
 
 /**
@@ -77,10 +78,10 @@ export const uploadMultipleToCloudinary = async (
 export const multerUpload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: parseInt(process.env.MAX_FILE_SIZE || '5242880'), // 5MB default
+    fileSize: env.MAX_FILE_SIZE,
   },
   fileFilter: (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-    const allowedTypes = (process.env.ALLOWED_FILE_TYPES || 'image/jpeg,image/png,image/jpg').split(',');
+    const allowedTypes = env.ALLOWED_FILE_TYPES.split(',');
     
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
