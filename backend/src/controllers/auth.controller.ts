@@ -208,6 +208,62 @@ export const getCurrentUser = asyncHandler(
   }
 );
 
+/**
+ * Update current user profile
+ * PATCH /api/v1/auth/profile
+ */
+export const updateProfile = asyncHandler(
+  async (req: Request, res: Response): Promise<void> => {
+    const userId = req.user!._id;
+    const { firstName, lastName, fcmToken } = req.body;
+    const updates: Record<string, string> = {};
+    if (firstName) updates.firstName = firstName;
+    if (lastName) updates.lastName = lastName;
+    if (fcmToken) updates.fcmToken = fcmToken;
+    const user = await (await import('../models/User')).User.findByIdAndUpdate(
+      userId, updates, { new: true }
+    );
+    sendSuccess(res, 'Profile updated', { user });
+  }
+);
+
+/**
+ * Dev-only: login/register by phone number (skips Firebase OTP)
+ * POST /api/v1/auth/dev-phone
+ */
+export const devPhoneLogin = asyncHandler(
+  async (req: Request, res: Response): Promise<void> => {
+    if (!__DEV_MODE__) {
+      res.status(403).json({ success: false, message: 'Not available in production' });
+      return;
+    }
+    const { phone, role } = req.body;
+    if (!phone) { res.status(400).json({ success: false, message: 'phone required' }); return; }
+    const roleMap: Record<string, string> = { owner: 'salon_admin', customer: 'customer' };
+    const mappedRole = roleMap[role] ?? 'customer';
+    // Super admin cannot be created via dev-phone — must use email/password login.
+    if (mappedRole !== 'salon_admin' && mappedRole !== 'customer') {
+      res.status(403).json({ success: false, message: 'Invalid role for dev login' });
+      return;
+    }
+    const { registerCustomer } = await import('../services/auth.service');
+    const bcrypt = await import('bcryptjs');
+    const { user, tokens } = await registerCustomer(phone, undefined, 'Dev', 'User');
+    // Update role if needed — salon_admin requires email + password
+    if (user.role !== mappedRole) {
+      user.role = mappedRole as any;
+      if (mappedRole === 'salon_admin') {
+        if (!user.email) user.email = `dev-${phone}@trimcity.local`;
+        if (!user.password) user.password = await bcrypt.hash('DevPassword@1234', 12);
+      }
+      await user.save();
+    }
+    sendSuccess(res, 'Dev login successful', { user, tokens });
+  }
+);
+
+const __DEV_MODE__ = process.env.NODE_ENV !== 'production';
+
 export default {
   verifyFirebase,
   registerSalon,
@@ -215,4 +271,6 @@ export default {
   refreshToken,
   logoutUser,
   getCurrentUser,
+  updateProfile,
+  devPhoneLogin,
 };

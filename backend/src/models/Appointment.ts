@@ -199,29 +199,33 @@ appointmentSchema.virtual('endDateTime').get(function () {
   return date;
 });
 
+function getApptDateTime(appointmentDate: Date, startTime: string): Date {
+  const date = new Date(appointmentDate);
+  const [hours, minutes] = startTime.split(':');
+  date.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+  return date;
+}
+
 // Virtual for is past
 appointmentSchema.virtual('isPast').get(function () {
-  return this.appointmentDateTime < new Date();
+  return getApptDateTime(this.appointmentDate, this.startTime) < new Date();
 });
 
-// Virtual for is upcoming
+// Virtual for is upcoming (within next 24 hours)
 appointmentSchema.virtual('isUpcoming').get(function () {
   const now = new Date();
-  const appointmentTime = this.appointmentDateTime;
-  return appointmentTime > now && appointmentTime < new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const apptTime = getApptDateTime(this.appointmentDate, this.startTime);
+  return apptTime > now && apptTime < new Date(now.getTime() + 24 * 60 * 60 * 1000);
 });
 
-// Virtual for can cancel
+// Virtual for can cancel (at least 24 hours before appointment)
 appointmentSchema.virtual('canCancel').get(function () {
   if (this.status !== AppointmentStatus.PENDING && this.status !== AppointmentStatus.CONFIRMED) {
     return false;
   }
-  
-  const now = new Date();
-  const appointmentTime = this.appointmentDateTime;
-  const hoursDifference = (appointmentTime.getTime() - now.getTime()) / (1000 * 60 * 60);
-  
-  return hoursDifference >= 24; // Can cancel if at least 24 hours before appointment
+  const apptTime = getApptDateTime(this.appointmentDate, this.startTime);
+  const hoursDifference = (apptTime.getTime() - Date.now()) / (1000 * 60 * 60);
+  return hoursDifference >= 24;
 });
 
 // Ensure virtuals are included in JSON

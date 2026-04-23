@@ -80,7 +80,7 @@ export const multerUpload = multer({
   limits: {
     fileSize: env.MAX_FILE_SIZE,
   },
-  fileFilter: (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  fileFilter: (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
     const allowedTypes = env.ALLOWED_FILE_TYPES.split(',');
     
     if (allowedTypes.includes(file.mimetype)) {

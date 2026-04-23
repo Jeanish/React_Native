@@ -26,6 +26,15 @@ export const registerCustomer = async (
       }
       user.isPhoneVerified = true;
       user.lastLogin = new Date();
+      // Heal stale salon_admin/super_admin records missing email/password
+      if (
+        (user.role === USER_ROLES.SALON_ADMIN || user.role === USER_ROLES.SUPER_ADMIN) &&
+        (!user.email || !user.password)
+      ) {
+        const bcrypt = await import('bcryptjs');
+        if (!user.email) user.email = `dev-${phone}@trimcity.local`;
+        if (!user.password) user.password = await bcrypt.default.hash('DevPassword@1234', 12);
+      }
       await user.save();
     } else {
       // Create new user

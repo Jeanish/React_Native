@@ -20,7 +20,7 @@ import { BookingCard } from '../../components/booking/BookingCard';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useBookings } from '../../hooks/useBookings';
-import { cancelAppointment } from '../../services/firebase/booking.service';
+import { cancelAppointment } from '../../services/api/booking.service';
 import { useAuthStore } from '../../store/authStore';
 import { Strings } from '../../constants/strings';
 
@@ -44,7 +44,7 @@ export function AppointmentsScreen() {
           onPress: async () => {
             if (!user) return;
             setCancellingId(appointmentId);
-            const result = await cancelAppointment(appointmentId, user.uid);
+            const result = await cancelAppointment(appointmentId);
             if (result.error) {
               Alert.alert('Error', result.error);
             }

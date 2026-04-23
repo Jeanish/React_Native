@@ -6,6 +6,8 @@ import {
   refreshToken,
   logoutUser,
   getCurrentUser,
+  updateProfile,
+  devPhoneLogin,
 } from '../controllers/auth.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { validateBody } from '../middleware/validation.middleware';
@@ -67,5 +69,11 @@ router.post('/logout', authenticate, logoutUser);
 
 // Get current user profile
 router.get('/me', authenticate, getCurrentUser);
+
+// Update profile (name, fcmToken)
+router.patch('/profile', authenticate, updateProfile);
+
+// Dev-only: bypass Firebase OTP
+router.post('/dev-phone', devPhoneLogin);
 
 export default router;

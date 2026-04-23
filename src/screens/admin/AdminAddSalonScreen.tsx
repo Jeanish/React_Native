@@ -20,7 +20,7 @@ import { Colors, Typography, Spacing, Radius, Shadow } from '../../constants/the
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { useAuthStore } from '../../store/authStore';
-import { adminCreateSalon } from '../../services/firebase/salon.service';
+import { upsertMySalon } from '../../services/api/salon.service';
 import type { SalonCategory, SalonService, WorkingHours } from '../../types';
 
 const CATEGORIES: SalonCategory[] = ['men', 'women', 'unisex'];
@@ -88,20 +88,13 @@ export function AdminAddSalonScreen() {
     }
 
     setSaving(true);
-    const result = await adminCreateSalon({
+    const result = await upsertMySalon({
       name: name.trim(),
-      address: address.trim(),
       phone: phone.trim(),
-      latitude: lat,
-      longitude: lng,
       category,
-      totalSeats: parseInt(seats, 10) || 4,
-      isOpen: false,
-      ownerId: ownerId.trim() || (user?.uid ?? ''),
-      services,
-      photos: [],
-      workingHours: defaultWorkingHours(),
-      isVerified: true,
+      address: { street: address.trim(), city: 'Pune', state: 'Maharashtra', country: 'India' },
+      location: { type: 'Point', coordinates: [lng, lat] },
+      services: services.map(s => ({ _id: s.id, name: s.name, price: s.priceInr, duration: s.durationMinutes })) as any,
     });
     setSaving(false);
 

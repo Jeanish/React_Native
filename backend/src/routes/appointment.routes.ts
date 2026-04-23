@@ -14,15 +14,12 @@ import {
   getUpcomingAppointmentsController,
 } from '../controllers/appointment.controller';
 import { authenticate } from '../middleware/auth.middleware';
-import { checkRole } from '../middleware/roleCheck.middleware';
+import { requireCustomer, requireSalonAdmin } from '../middleware/roleCheck.middleware';
 import { validate } from '../middleware/validation.middleware';
 import Joi from 'joi';
 
 const router = Router();
 
-/**
- * Validation schemas
- */
 const createAppointmentSchema = Joi.object({
   salonId: Joi.string().required().pattern(/^[0-9a-fA-F]{24}$/),
   serviceIds: Joi.array().items(Joi.string().pattern(/^[0-9a-fA-F]{24}$/)).min(1).required(),
@@ -44,94 +41,23 @@ const completeAppointmentSchema = Joi.object({
   salonNotes: Joi.string().max(1000).trim(),
 });
 
-/**
- * Public routes
- */
+// Public
 router.get('/salons/:salonId/available-slots', getAvailableSlots);
 
-/**
- * Protected routes (Customer)
- */
-router.post(
-  '/',
-  authenticate,
-  checkRole(['customer']),
-  validate(createAppointmentSchema),
-  createAppointmentController
-);
+// Customer routes — /upcoming must be before /:id
+router.get('/upcoming', authenticate, requireCustomer, getUpcomingAppointmentsController);
+router.get('/', authenticate, requireCustomer, getUserAppointments);
+router.get('/:id', authenticate, getAppointment);
 
-router.get(
-  '/upcoming',
-  authenticate,
-  checkRole(['customer']),
-  getUpcomingAppointmentsController
-);
+router.post('/', authenticate, requireCustomer, validate({ body: createAppointmentSchema }), createAppointmentController);
+router.patch('/:id/cancel', authenticate, validate({ body: cancelAppointmentSchema }), cancelAppointmentController);
+router.patch('/:id/reschedule', authenticate, requireCustomer, validate({ body: rescheduleAppointmentSchema }), rescheduleAppointmentController);
 
-router.get(
-  '/',
-  authenticate,
-  checkRole(['customer']),
-  getUserAppointments
-);
-
-router.get(
-  '/:id',
-  authenticate,
-  getAppointment
-);
-
-router.patch(
-  '/:id/cancel',
-  authenticate,
-  validate(cancelAppointmentSchema),
-  cancelAppointmentController
-);
-
-router.patch(
-  '/:id/reschedule',
-  authenticate,
-  checkRole(['customer']),
-  validate(rescheduleAppointmentSchema),
-  rescheduleAppointmentController
-);
-
-/**
- * Protected routes (Salon Admin)
- */
-router.get(
-  '/salons/:salonId/appointments',
-  authenticate,
-  checkRole(['salon_admin']),
-  getSalonAppointmentsController
-);
-
-router.patch(
-  '/:id/confirm',
-  authenticate,
-  checkRole(['salon_admin']),
-  confirmAppointmentController
-);
-
-router.patch(
-  '/:id/start',
-  authenticate,
-  checkRole(['salon_admin']),
-  startAppointmentController
-);
-
-router.patch(
-  '/:id/complete',
-  authenticate,
-  checkRole(['salon_admin']),
-  validate(completeAppointmentSchema),
-  completeAppointmentController
-);
-
-router.patch(
-  '/:id/no-show',
-  authenticate,
-  checkRole(['salon_admin']),
-  markAsNoShowController
-);
+// Salon admin routes
+router.get('/salons/:salonId/appointments', authenticate, requireSalonAdmin, getSalonAppointmentsController);
+router.patch('/:id/confirm', authenticate, requireSalonAdmin, confirmAppointmentController);
+router.patch('/:id/start', authenticate, requireSalonAdmin, startAppointmentController);
+router.patch('/:id/complete', authenticate, requireSalonAdmin, validate({ body: completeAppointmentSchema }), completeAppointmentController);
+router.patch('/:id/no-show', authenticate, requireSalonAdmin, markAsNoShowController);
 
 export default router;

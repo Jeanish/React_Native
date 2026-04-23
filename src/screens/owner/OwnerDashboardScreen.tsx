@@ -20,26 +20,55 @@ import { Colors, Typography, Spacing, Radius, Shadow } from '../../constants/the
 import { LiveStatusBox } from '../../components/salon/LiveStatusBox';
 import { LiveIndicator } from '../../components/salon/LiveIndicator';
 import { AppointmentBadge } from '../../components/ui/Badge';
+import { EmptyState } from '../../components/ui/EmptyState';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { useAuthStore } from '../../store/authStore';
-import { fetchSalonByOwner, toggleSalonOpen } from '../../services/firebase/salon.service';
-import { subscribeToOwnerAppointments, ownerUpdateAppointmentStatus } from '../../services/firebase/booking.service';
+import { useNavigation } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { OwnerTabParamList } from '../../types';
+import { fetchMySalon, toSalonWithMetaFromApi } from '../../services/api/salon.service';
+import { fetchSalonAppointments, updateAppointmentStatus, type ApiAppointment } from '../../services/api/booking.service';
 import type { Appointment, Salon } from '../../types';
 import { todayDateString, formatPrice } from '../../utils/formatters';
 import { Strings } from '../../constants/strings';
 
 export function OwnerDashboardScreen() {
   const { user } = useAuthStore();
+  const navigation = useNavigation<BottomTabNavigationProp<OwnerTabParamList>>();
   const [salon, setSalon] = useState<Salon | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [togglingOpen, setTogglingOpen] = useState(false);
 
+  function apiApptToAppointment(a: ApiAppointment): Appointment {
+    const svc = typeof a.serviceId === 'object' ? a.serviceId : null;
+    const s = typeof a.salonId === 'object' ? a.salonId : null;
+    const statusMap: Record<string, Appointment['status']> = {
+      pending: 'waiting', confirmed: 'confirmed', 'in-progress': 'confirmed',
+      completed: 'completed', cancelled: 'cancelled', 'no-show': 'completed',
+    };
+    return {
+      appointmentId: a._id,
+      salonId: s?._id ?? (typeof a.salonId === 'string' ? a.salonId : ''),
+      salonName: s?.name ?? salon?.name ?? '',
+      salonAddress: '', salonLatitude: 0, salonLongitude: 0,
+      customerId: typeof a.customerId === 'string' ? a.customerId : (a.customerId as any)?._id ?? '',
+      customerName: typeof a.customerId === 'object' ? `${(a.customerId as any).firstName} ${(a.customerId as any).lastName}`.trim() : '',
+      customerPhone: typeof a.customerId === 'object' ? (a.customerId as any).phone ?? '' : '',
+      service: svc?.name ?? 'Service',
+      servicePriceInr: svc?.price ?? a.totalAmount ?? 0,
+      serviceDurationMinutes: svc?.duration ?? 0,
+      timeSlot: a.startTime, date: a.appointmentDate?.slice(0, 10) ?? '',
+      status: statusMap[a.status] ?? 'confirmed',
+      createdAt: new Date(a.createdAt).getTime(),
+    };
+  }
+
   async function loadSalon() {
     if (!user) return;
-    const s = await fetchSalonByOwner(user.uid);
-    setSalon(s);
+    const result = await fetchMySalon();
+    if (result.data) setSalon(toSalonWithMetaFromApi(result.data) as any);
     setLoading(false);
     setRefreshing(false);
   }
@@ -48,38 +77,60 @@ export function OwnerDashboardScreen() {
     loadSalon();
   }, [user?.uid]);
 
-  // Real-time appointment subscription for today
+  // Fetch today's appointments (poll every 30s)
   useEffect(() => {
     if (!salon) return;
-    const unsub = subscribeToOwnerAppointments(
-      salon.salonId,
-      todayDateString(),
-      appts => setAppointments(appts),
-    );
-    return () => unsub();
+    const load = async () => {
+      const result = await fetchSalonAppointments({ date: todayDateString() });
+      if (result.data) setAppointments(result.data.map(apiApptToAppointment));
+    };
+    load();
+    const timer = setInterval(load, 30000);
+    return () => clearInterval(timer);
   }, [salon?.salonId]);
 
-  async function handleToggleOpen(value: boolean) {
-    if (!salon || !user) return;
-    setTogglingOpen(true);
-    const result = await toggleSalonOpen(salon.salonId, value);
-    if (result.error) {
-      Alert.alert('Error', result.error);
-    } else {
-      setSalon(prev => prev ? { ...prev, isOpen: value } : prev);
-    }
-    setTogglingOpen(false);
+  async function handleToggleOpen(_value: boolean) {
+    Alert.alert('Info', 'Open/close toggle not yet supported via API.');
   }
 
   async function handleMarkStatus(appt: Appointment, newStatus: 'confirmed' | 'completed' | 'cancelled') {
-    if (!salon || !user) return;
-    const result = await ownerUpdateAppointmentStatus(
-      appt.appointmentId, user.uid, salon.salonId, newStatus,
-    );
+    const result = await updateAppointmentStatus(appt.appointmentId, newStatus);
     if (result.error) Alert.alert('Error', result.error);
+    else {
+      setAppointments(prev =>
+        prev.map(a => a.appointmentId === appt.appointmentId ? { ...a, status: newStatus } : a)
+      );
+    }
   }
 
   if (loading) return <LoadingSpinner fullScreen message="Loading dashboard…" />;
+
+  if (!salon) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar backgroundColor="transparent" translucent barStyle="light-content" />
+        <LinearGradient
+          colors={['#7B0000', '#C62828', '#D32F2F']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.header}>
+          <View style={styles.headerTop}>
+            <View>
+              <Text style={styles.greeting}>Welcome,</Text>
+              <Text style={styles.salonName}>No Salon Yet</Text>
+            </View>
+          </View>
+        </LinearGradient>
+        <EmptyState
+          icon="✂️"
+          title="No Salon Found"
+          subtitle="Set up your salon profile to start accepting bookings and managing your live queue."
+          actionLabel="Set Up My Salon"
+          onAction={() => navigation.navigate('SalonSetup')}
+        />
+      </SafeAreaView>
+    );
+  }
 
   const waiting = appointments.filter(a => a.status === 'waiting');
   const seated = appointments.filter(a => a.status === 'confirmed');

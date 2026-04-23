@@ -1,8 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 import bcrypt from 'bcryptjs';
-import { mongooseFieldEncryption } from 'mongoose-field-encryption';
 import { USER_ROLES } from '../utils/constants';
-import { env } from '../config/environment';
 
 export interface IUser extends Document {
   _id: mongoose.Types.ObjectId;
@@ -157,11 +155,6 @@ userSchema.pre('validate', function (next) {
   } else {
     next();
   }
-});
-
-userSchema.plugin(mongooseFieldEncryption, {
-  fields: ['firstName', 'lastName', 'avatar'],
-  secret: env.DB_ENCRYPTION_KEY,
 });
 
 export const User = mongoose.model<IUser>('User', userSchema);

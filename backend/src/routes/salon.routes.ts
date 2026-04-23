@@ -11,16 +11,13 @@ import {
   getPopularSalonsController,
 } from '../controllers/salon.controller';
 import { authenticate } from '../middleware/auth.middleware';
-import { checkRole } from '../middleware/roleCheck.middleware';
+import { requireRole, requireSalonAdmin } from '../middleware/roleCheck.middleware';
 import { validate } from '../middleware/validation.middleware';
 import { multerUpload } from '../services/upload.service';
 import Joi from 'joi';
 
 const router = Router();
 
-/**
- * Validation schemas
- */
 const createSalonSchema = Joi.object({
   name: Joi.string().required().max(100).trim(),
   description: Joi.string().max(1000).trim(),
@@ -32,7 +29,7 @@ const createSalonSchema = Joi.object({
     city: Joi.string().required().trim(),
     state: Joi.string().required().trim(),
     zipCode: Joi.string().required().trim(),
-    country: Joi.string().trim().default('USA'),
+    country: Joi.string().trim().default('India'),
   }).required(),
   location: Joi.object({
     type: Joi.string().valid('Point').default('Point'),
@@ -76,53 +73,20 @@ const updateSalonSchema = Joi.object({
   isActive: Joi.boolean(),
 });
 
-/**
- * Public routes
- */
+// Public routes
 router.get('/', getAllSalons);
 router.get('/nearby', getNearbySalonsController);
 router.get('/popular', getPopularSalonsController);
+
+// /my-salon must be before /:id so Express doesn't treat "my-salon" as an id
+router.get('/my-salon', authenticate, requireRole('salon_admin', 'super_admin'), getMySalon);
+
 router.get('/:id', getSalonById);
 
-/**
- * Protected routes (Salon Admin)
- */
-router.post(
-  '/',
-  authenticate,
-  checkRole(['salon_admin']),
-  validate(createSalonSchema),
-  createSalon
-);
+router.post('/', authenticate, requireRole('salon_admin', 'super_admin'), validate({ body: createSalonSchema }), createSalon);
+router.put('/:id', authenticate, requireRole('salon_admin', 'super_admin'), validate({ body: updateSalonSchema }), updateSalon);
 
-router.get(
-  '/my-salon',
-  authenticate,
-  checkRole(['salon_admin']),
-  getMySalon
-);
-
-router.put(
-  '/:id',
-  authenticate,
-  checkRole(['salon_admin']),
-  validate(updateSalonSchema),
-  updateSalon
-);
-
-router.post(
-  '/:id/images',
-  authenticate,
-  checkRole(['salon_admin']),
-  multerUpload.array('images', 10), // Max 10 images
-  uploadSalonImages
-);
-
-router.delete(
-  '/:id/images/:imageId',
-  authenticate,
-  checkRole(['salon_admin']),
-  deleteSalonImage
-);
+router.post('/:id/images', authenticate, requireSalonAdmin, multerUpload.array('images', 10), uploadSalonImages);
+router.delete('/:id/images/:imageId', authenticate, requireSalonAdmin, deleteSalonImage);
 
 export default router;

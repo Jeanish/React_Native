@@ -11,6 +11,7 @@ import type { OwnerTabParamList } from '../types';
 import { OwnerDashboardScreen } from '../screens/owner/OwnerDashboardScreen';
 import { SalonSetupScreen } from '../screens/owner/SalonSetupScreen';
 import { BookingManagementScreen } from '../screens/owner/BookingManagementScreen';
+import { OwnerProfileScreen } from '../screens/owner/OwnerProfileScreen';
 
 const Tab = createBottomTabNavigator<OwnerTabParamList>();
 
@@ -69,6 +70,16 @@ export function OwnerNavigator() {
           title: 'My Salon',
           tabBarIcon: ({ focused }) => (
             <TabIcon emoji="✂️" label="Salon" focused={focused} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="OwnerProfile"
+        component={OwnerProfileScreen}
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ focused }) => (
+            <TabIcon emoji="👤" label="Profile" focused={focused} />
           ),
         }}
       />

@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import Appointment, { AppointmentStatus, IAppointment } from '../models/Appointment';
 import Service from '../models/Service';
 import Salon from '../models/Salon';
-import User from '../models/User';
+import { User } from '../models/User';
 import { validateAppointmentTime, timeToMinutes, minutesToTime } from './availability.service';
 
 /**
@@ -226,7 +226,7 @@ export const getAppointmentById = async (
 
   // Check authorization
   const isCustomer = appointment.customerId._id.toString() === userId;
-  const isSalonOwner = userRole === 'salon_admin' && appointment.salonId.ownerId?.toString() === userId;
+  const isSalonOwner = userRole === 'salon_admin' && (appointment.salonId as unknown as import('../models/Salon').ISalon).ownerId?.toString() === userId;
   const isAdmin = userRole === 'super_admin';
 
   if (!isCustomer && !isSalonOwner && !isAdmin) {
@@ -327,7 +327,7 @@ export const confirmAppointment = async (
     throw new Error('Appointment not found');
   }
 
-  if (appointment.salonId.ownerId?.toString() !== salonOwnerId) {
+  if ((appointment.salonId as unknown as import('../models/Salon').ISalon).ownerId?.toString() !== salonOwnerId) {
     throw new Error('You are not authorized to confirm this appointment');
   }
 
@@ -356,7 +356,7 @@ export const startAppointment = async (
     throw new Error('Appointment not found');
   }
 
-  if (appointment.salonId.ownerId?.toString() !== salonOwnerId) {
+  if ((appointment.salonId as unknown as import('../models/Salon').ISalon).ownerId?.toString() !== salonOwnerId) {
     throw new Error('You are not authorized to start this appointment');
   }
 
@@ -384,7 +384,7 @@ export const completeAppointment = async (
     throw new Error('Appointment not found');
   }
 
-  if (appointment.salonId.ownerId?.toString() !== salonOwnerId) {
+  if ((appointment.salonId as unknown as import('../models/Salon').ISalon).ownerId?.toString() !== salonOwnerId) {
     throw new Error('You are not authorized to complete this appointment');
   }
 
@@ -421,7 +421,7 @@ export const cancelAppointment = async (
 
   // Check authorization
   const isCustomer = appointment.customerId.toString() === userId;
-  const isSalonOwner = userRole === 'salon_admin' && appointment.salonId.ownerId?.toString() === userId;
+  const isSalonOwner = userRole === 'salon_admin' && (appointment.salonId as unknown as import('../models/Salon').ISalon).ownerId?.toString() === userId;
 
   if (!isCustomer && !isSalonOwner) {
     throw new Error('You are not authorized to cancel this appointment');
@@ -589,7 +589,7 @@ export const markAsNoShow = async (
     throw new Error('Appointment not found');
   }
 
-  if (appointment.salonId.ownerId?.toString() !== salonOwnerId) {
+  if ((appointment.salonId as unknown as import('../models/Salon').ISalon).ownerId?.toString() !== salonOwnerId) {
     throw new Error('You are not authorized to update this appointment');
   }
 

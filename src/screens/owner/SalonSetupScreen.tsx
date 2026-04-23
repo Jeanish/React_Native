@@ -20,7 +20,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { useAuthStore } from '../../store/authStore';
-import { fetchSalonByOwner, upsertSalon } from '../../services/firebase/salon.service';
+import { fetchMySalon, upsertMySalon, toSalonWithMetaFromApi } from '../../services/api/salon.service';
 import type { Salon, SalonService, SalonCategory } from '../../types';
 import { sanitizeText, sanitizeName, sanitizePrice, sanitizeDuration, sanitizeSeats } from '../../services/security/sanitizer';
 import { Strings } from '../../constants/strings';
@@ -51,14 +51,14 @@ export function SalonSetupScreen() {
   useEffect(() => {
     async function load() {
       if (!user) return;
-      const existing = await fetchSalonByOwner(user.uid);
-      if (existing) {
-        setSalon(existing);
+      const result = await fetchMySalon();
+      if (result.data) {
+        const existing = toSalonWithMetaFromApi(result.data);
+        setSalon(existing as any);
         setName(existing.name);
         setAddress(existing.address);
         setPhone(existing.phone);
         setCategory(existing.category);
-        setTotalSeats(String(existing.totalSeats));
         setServices(existing.services);
         setLatitude(String(existing.latitude));
         setLongitude(String(existing.longitude));
@@ -102,26 +102,31 @@ export function SalonSetupScreen() {
     }
 
     setSaving(true);
-    const result = await upsertSalon({
-      salonId: salon.salonId,
-      ownerId: user.uid,
+    const lat = parseFloat(latitude) || 18.5204;
+    const lng = parseFloat(longitude) || 73.8567;
+    const result = await upsertMySalon({
       name: sanitizeName(name),
-      address: sanitizeText(address),
       phone: phone.replace(/\D/g, '').substring(0, 10),
       category,
-      totalSeats: sanitizeSeats(parseInt(totalSeats, 10)),
-      services,
-      latitude: parseFloat(latitude) || 0,
-      longitude: parseFloat(longitude) || 0,
+      address: {
+        street: sanitizeText(address),
+        city: 'Pune',
+        state: 'Maharashtra',
+        country: 'India',
+      },
+      location: { type: 'Point', coordinates: [lng, lat] },
+      services: services.map(s => ({
+        _id: s.id,
+        name: s.name,
+        price: s.priceInr,
+        duration: s.durationMinutes,
+      })) as any,
     });
 
     if (result.error) {
       Alert.alert('Save Failed', result.error);
     } else {
       Alert.alert('Saved!', 'Your salon profile has been saved. An admin will verify it shortly.');
-      if (!salon.salonId && result.data) {
-        setSalon(prev => ({ ...prev, salonId: result.data }));
-      }
     }
     setSaving(false);
   }

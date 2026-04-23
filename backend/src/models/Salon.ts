@@ -105,7 +105,7 @@ const salonSchema = new Schema<ISalon>(
         type: String,
         required: [true, 'Country is required'],
         trim: true,
-        default: 'USA',
+        default: 'India',
       },
     },
     location: {

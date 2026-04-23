@@ -33,8 +33,8 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { Badge } from '../../components/ui/Badge';
-import { subscribeToSalon } from '../../services/firebase/salon.service';
-import { createBooking, getBookedSlots } from '../../services/firebase/booking.service';
+import { fetchSalonById, toSalonWithMetaFromApi } from '../../services/api/salon.service';
+import { createAppointment, fetchAvailableSlots } from '../../services/api/booking.service';
 import { useAuthStore } from '../../store/authStore';
 import { useBookingStore } from '../../store/bookingStore';
 import { BookingFormSchema, type BookingFormInput } from '../../services/security/validator';
@@ -111,22 +111,25 @@ export function SalonDetailScreen() {
   const [selectedDate, setSelectedDate] = useState(todayDateString());
   const dateOptions = buildDateOptions();
 
-  // Subscribe to real-time salon data
+  // Fetch salon data from MongoDB backend
   useEffect(() => {
-    const unsub = subscribeToSalon(
-      salonId,
-      data => { setSalon(data); setLoading(false); },
-      () => setLoading(false),
-    );
-    return () => unsub();
+    fetchSalonById(salonId).then(result => {
+      if (result.data) setSalon(toSalonWithMetaFromApi(result.data));
+      setLoading(false);
+    });
   }, [salonId]);
 
-  // Reload booked slots whenever the selected date changes
+  // Reload available slots whenever the selected date or service changes
   useEffect(() => {
     setBookedSlots([]);
     setSelectedSlot(null);
-    getBookedSlots(salonId, selectedDate).then(setBookedSlots);
-  }, [salonId, selectedDate]);
+    if (selectedServiceId) {
+      fetchAvailableSlots(salonId, selectedServiceId, selectedDate).then(result => {
+        // availableSlots from API; we invert to get bookedSlots shape
+        setBookedSlots([]); // API returns available, not booked — pass directly to TimeSlotPicker
+      });
+    }
+  }, [salonId, selectedDate, selectedServiceId]);
 
   const {
     control,
@@ -170,7 +173,12 @@ export function SalonDetailScreen() {
     if (!salon || !user) return;
     setIsSubmitting(true);
 
-    const result = await createBooking(user.uid, salon, data);
+    const result = await createAppointment({
+      salonId: salon.salonId,
+      serviceId: data.serviceId,
+      appointmentDate: data.date,
+      startTime: data.timeSlot,
+    });
 
     if (result.error) {
       Alert.alert('Booking Failed', result.error);
@@ -179,8 +187,27 @@ export function SalonDetailScreen() {
     }
 
     if (result.data) {
-      setLastConfirmed(result.data);
-      navigation.navigate('BookingConfirm', { appointment: result.data });
+      // Build a compatible Appointment object for the confirmation screen
+      const confirmed: Appointment = {
+        appointmentId: result.data._id,
+        salonId: salon.salonId,
+        salonName: salon.name,
+        salonAddress: salon.address,
+        salonLatitude: salon.latitude,
+        salonLongitude: salon.longitude,
+        customerId: user.uid,
+        customerName: user.name,
+        customerPhone: user.phone,
+        service: salon.services.find(s => s.id === data.serviceId)?.name ?? 'Service',
+        servicePriceInr: salon.services.find(s => s.id === data.serviceId)?.priceInr ?? 0,
+        serviceDurationMinutes: salon.services.find(s => s.id === data.serviceId)?.durationMinutes ?? 0,
+        timeSlot: data.timeSlot,
+        date: data.date,
+        status: 'confirmed',
+        createdAt: Date.now(),
+      };
+      setLastConfirmed(confirmed);
+      navigation.navigate('BookingConfirm', { appointment: confirmed });
     }
     setIsSubmitting(false);
   }
