@@ -1,0 +1,137 @@
+import { Router } from 'express';
+import {
+  getAvailableSlots,
+  createAppointmentController,
+  getAppointment,
+  getUserAppointments,
+  getSalonAppointmentsController,
+  confirmAppointmentController,
+  startAppointmentController,
+  completeAppointmentController,
+  cancelAppointmentController,
+  rescheduleAppointmentController,
+  markAsNoShowController,
+  getUpcomingAppointmentsController,
+} from '../controllers/appointment.controller';
+import { authenticate } from '../middleware/auth.middleware';
+import { checkRole } from '../middleware/roleCheck.middleware';
+import { validate } from '../middleware/validation.middleware';
+import Joi from 'joi';
+
+const router = Router();
+
+/**
+ * Validation schemas
+ */
+const createAppointmentSchema = Joi.object({
+  salonId: Joi.string().required().pattern(/^[0-9a-fA-F]{24}$/),
+  serviceIds: Joi.array().items(Joi.string().pattern(/^[0-9a-fA-F]{24}$/)).min(1).required(),
+  appointmentDate: Joi.date().required(),
+  startTime: Joi.string().required().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/),
+  notes: Joi.string().max(1000).trim(),
+});
+
+const cancelAppointmentSchema = Joi.object({
+  reason: Joi.string().required().min(10).max(500).trim(),
+});
+
+const rescheduleAppointmentSchema = Joi.object({
+  appointmentDate: Joi.date().required(),
+  startTime: Joi.string().required().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/),
+});
+
+const completeAppointmentSchema = Joi.object({
+  salonNotes: Joi.string().max(1000).trim(),
+});
+
+/**
+ * Public routes
+ */
+router.get('/salons/:salonId/available-slots', getAvailableSlots);
+
+/**
+ * Protected routes (Customer)
+ */
+router.post(
+  '/',
+  authenticate,
+  checkRole(['customer']),
+  validate(createAppointmentSchema),
+  createAppointmentController
+);
+
+router.get(
+  '/upcoming',
+  authenticate,
+  checkRole(['customer']),
+  getUpcomingAppointmentsController
+);
+
+router.get(
+  '/',
+  authenticate,
+  checkRole(['customer']),
+  getUserAppointments
+);
+
+router.get(
+  '/:id',
+  authenticate,
+  getAppointment
+);
+
+router.patch(
+  '/:id/cancel',
+  authenticate,
+  validate(cancelAppointmentSchema),
+  cancelAppointmentController
+);
+
+router.patch(
+  '/:id/reschedule',
+  authenticate,
+  checkRole(['customer']),
+  validate(rescheduleAppointmentSchema),
+  rescheduleAppointmentController
+);
+
+/**
+ * Protected routes (Salon Admin)
+ */
+router.get(
+  '/salons/:salonId/appointments',
+  authenticate,
+  checkRole(['salon_admin']),
+  getSalonAppointmentsController
+);
+
+router.patch(
+  '/:id/confirm',
+  authenticate,
+  checkRole(['salon_admin']),
+  confirmAppointmentController
+);
+
+router.patch(
+  '/:id/start',
+  authenticate,
+  checkRole(['salon_admin']),
+  startAppointmentController
+);
+
+router.patch(
+  '/:id/complete',
+  authenticate,
+  checkRole(['salon_admin']),
+  validate(completeAppointmentSchema),
+  completeAppointmentController
+);
+
+router.patch(
+  '/:id/no-show',
+  authenticate,
+  checkRole(['salon_admin']),
+  markAsNoShowController
+);
+
+export default router;
