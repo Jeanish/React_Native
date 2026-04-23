@@ -1,18 +1,16 @@
 /**
- * TrimCity — Owner Navigator
- * Bottom tabs (RED) for salon owner panel.
+ * TrimCity — Admin Navigator
+ * Bottom tabs for the admin panel (blue theme).
  */
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text, View, StyleSheet } from 'react-native';
 import { Colors, Typography } from '../constants/theme';
-import type { OwnerTabParamList } from '../types';
+import type { AdminTabParamList } from '../types';
+import { AdminSalonsScreen } from '../screens/admin/AdminSalonsScreen';
+import { AdminAddSalonScreen } from '../screens/admin/AdminAddSalonScreen';
 
-import { OwnerDashboardScreen } from '../screens/owner/OwnerDashboardScreen';
-import { SalonSetupScreen } from '../screens/owner/SalonSetupScreen';
-import { BookingManagementScreen } from '../screens/owner/BookingManagementScreen';
-
-const Tab = createBottomTabNavigator<OwnerTabParamList>();
+const Tab = createBottomTabNavigator<AdminTabParamList>();
 
 function TabIcon({ emoji, label, focused }: { emoji: string; label: string; focused: boolean }) {
   return (
@@ -23,16 +21,13 @@ function TabIcon({ emoji, label, focused }: { emoji: string; label: string; focu
   );
 }
 
-export function OwnerNavigator() {
+export function AdminNavigator() {
   return (
     <Tab.Navigator
       screenOptions={{
-        headerStyle: { backgroundColor: Colors.navigationRed },
-        headerTintColor: Colors.white,
-        headerTitleStyle: { fontWeight: '700', fontSize: 18 },
-        headerShadowVisible: false,
+        headerShown: false,
         tabBarShowLabel: false,
-        tabBarActiveTintColor: Colors.navigationRed,
+        tabBarActiveTintColor: '#3949AB',
         tabBarInactiveTintColor: Colors.textTertiary,
         tabBarStyle: {
           backgroundColor: Colors.white,
@@ -43,32 +38,20 @@ export function OwnerNavigator() {
         },
       }}>
       <Tab.Screen
-        name="Dashboard"
-        component={OwnerDashboardScreen}
+        name="AdminSalons"
+        component={AdminSalonsScreen}
         options={{
-          title: 'Dashboard',
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="📊" label="Dashboard" focused={focused} />
+            <TabIcon emoji="🏪" label="Salons" focused={focused} />
           ),
         }}
       />
       <Tab.Screen
-        name="BookingMgmt"
-        component={BookingManagementScreen}
+        name="AdminAdd"
+        component={AdminAddSalonScreen}
         options={{
-          title: 'Bookings',
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="📋" label="Bookings" focused={focused} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="SalonSetup"
-        component={SalonSetupScreen}
-        options={{
-          title: 'My Salon',
-          tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="✂️" label="Salon" focused={focused} />
+            <TabIcon emoji="➕" label="Add Salon" focused={focused} />
           ),
         }}
       />
@@ -86,5 +69,5 @@ const styles = StyleSheet.create({
     fontWeight: Typography.semibold,
     marginTop: 2,
   },
-  tabLabelFocused: { color: Colors.navigationRed },
+  tabLabelFocused: { color: '#3949AB' },
 });

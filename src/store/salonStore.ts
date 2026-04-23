@@ -5,6 +5,11 @@
 import { create } from 'zustand';
 import type { SalonWithMeta, CityStats, FilterChip, SalonFilters } from '../types';
 
+interface UserLocation {
+  lat: number;
+  lng: number;
+}
+
 interface SalonState {
   salons: SalonWithMeta[];
   cityStats: CityStats | null;
@@ -12,6 +17,7 @@ interface SalonState {
   filters: SalonFilters;
   isLoading: boolean;
   error: string | null;
+  userLocation: UserLocation | null;
 
   // Computed
   filteredSalons: () => SalonWithMeta[];
@@ -24,6 +30,20 @@ interface SalonState {
   setFilter: (filter: FilterChip) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+  setUserLocation: (loc: UserLocation | null) => void;
+}
+
+// Haversine formula — returns distance in km
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 export const useSalonStore = create<SalonState>()((set, get) => ({
@@ -33,10 +53,21 @@ export const useSalonStore = create<SalonState>()((set, get) => ({
   filters: { search: '', activeFilter: 'all' },
   isLoading: true,
   error: null,
+  userLocation: null,
 
   filteredSalons: () => {
-    const { salons, filters } = get();
-    let result = [...salons];
+    const { salons, filters, userLocation } = get();
+
+    // Attach distance to every salon if location is known
+    let result: SalonWithMeta[] = salons.map(s => {
+      if (userLocation && s.latitude && s.longitude) {
+        return {
+          ...s,
+          distanceKm: haversineKm(userLocation.lat, userLocation.lng, s.latitude, s.longitude),
+        };
+      }
+      return s;
+    });
 
     // Search filter
     if (filters.search.trim()) {
@@ -68,6 +99,11 @@ export const useSalonStore = create<SalonState>()((set, get) => ({
       case 'unisex':
         result = result.filter(s => s.category === 'unisex');
         break;
+      case 'near_me':
+        result = result
+          .filter(s => s.distanceKm !== undefined)
+          .sort((a, b) => (a.distanceKm ?? 999) - (b.distanceKm ?? 999));
+        break;
       default:
         break;
     }
@@ -84,4 +120,5 @@ export const useSalonStore = create<SalonState>()((set, get) => ({
     set(state => ({ filters: { ...state.filters, activeFilter } })),
   setLoading: (isLoading) => set({ isLoading }),
   setError: (error) => set({ error, isLoading: false }),
+  setUserLocation: (userLocation) => set({ userLocation }),
 }));

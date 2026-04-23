@@ -1,8 +1,12 @@
 /**
  * TrimCity — Phone Number Screen
- * Entry point for OTP login. Supports +91 Indian numbers.
+ * Premium animated UI — dark gradient hero + slide-up white card
+ *
+ * OTP Strategy (from /docs/FREE_TOOLS_AND_PACKAGES.md):
+ *   MVP  → Firebase Phone Auth (FREE, unlimited)
+ *   Scale → MSG91 (₹0.15–0.25/SMS) swap in sendOTP() only
  */
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,26 +16,102 @@ import {
   ScrollView,
   TouchableOpacity,
   StatusBar,
-  SafeAreaView,
   TextInput,
+  Animated,
+  Easing,
+  ActivityIndicator,
+  Dimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import LinearGradient from 'react-native-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { AuthStackParamList, UserRole } from '../../types';
-import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
-import { Button } from '../../components/ui/Button';
+import { Colors, Typography, Spacing, Radius, Shadow } from '../../constants/theme';
 import { Strings } from '../../constants/strings';
+import { sendOTP } from '../../services/firebase/auth.service';
 import { validateIndianPhone } from '../../services/security/validator';
 import { sanitizePhoneNumber } from '../../services/security/sanitizer';
 
 type NavProp = NativeStackNavigationProp<AuthStackParamList, 'Phone'>;
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const TOGGLE_PADDING = 4;
+const TOGGLE_INNER_WIDTH = SCREEN_WIDTH - Spacing[5] * 2 - TOGGLE_PADDING * 2;
+const INDICATOR_WIDTH = TOGGLE_INNER_WIDTH / 2;
+
+// ─── Gradient palette ────────────────────────────────────────────────────────
+const HERO_GRADIENT = ['#0D0000', '#5C0000', '#B71C1C', '#D32F2F'] as const;
+const CTA_GRADIENT  = ['#EF5350', '#D32F2F', '#B71C1C'] as const;
+const CTA_DISABLED  = ['#BDBDBD', '#9E9E9E'] as const;
+
 export function PhoneScreen() {
   const navigation = useNavigation<NavProp>();
-  const [phone, setPhone] = useState('');
-  const [role, setRole] = useState<UserRole>('customer');
-  const [error, setError] = useState('');
+  const [phone, setPhone]       = useState('');
+  const [role, setRole]         = useState<UserRole>('customer');
+  const [error, setError]       = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+
+  // ── Entrance animations ───────────────────────────────────────────────────
+  const logoScale  = useRef(new Animated.Value(0)).current;
+  const logoSlide  = useRef(new Animated.Value(-24)).current;
+  const heroOpacity = useRef(new Animated.Value(0)).current;
+  const cardSlide  = useRef(new Animated.Value(80)).current;
+  const cardOpacity = useRef(new Animated.Value(0)).current;
+  // Continuous float
+  const logoFloat  = useRef(new Animated.Value(0)).current;
+  // Role indicator position (left offset)
+  const indicatorX = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    // Staggered entrance
+    Animated.parallel([
+      Animated.timing(heroOpacity, {
+        toValue: 1, duration: 500, useNativeDriver: true,
+      }),
+      Animated.timing(logoScale, {
+        toValue: 1, duration: 700, delay: 150,
+        easing: Easing.out(Easing.back(1.3)), useNativeDriver: true,
+      }),
+      Animated.timing(logoSlide, {
+        toValue: 0, duration: 600, delay: 150,
+        easing: Easing.out(Easing.poly(4)), useNativeDriver: true,
+      }),
+      Animated.timing(cardOpacity, {
+        toValue: 1, duration: 500, delay: 350, useNativeDriver: true,
+      }),
+      Animated.timing(cardSlide, {
+        toValue: 0, duration: 650, delay: 300,
+        easing: Easing.out(Easing.poly(4)), useNativeDriver: true,
+      }),
+    ]).start();
+
+    // Gentle floating loop on logo
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(logoFloat, {
+          toValue: -9, duration: 2000,
+          easing: Easing.inOut(Easing.sin), useNativeDriver: true,
+        }),
+        Animated.timing(logoFloat, {
+          toValue: 0, duration: 2000,
+          easing: Easing.inOut(Easing.sin), useNativeDriver: true,
+        }),
+      ]),
+    ).start();
+  }, []);
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
+  function handleRoleSwitch(newRole: UserRole) {
+    setRole(newRole);
+    Animated.timing(indicatorX, {
+      toValue: newRole === 'customer' ? 0 : INDICATOR_WIDTH,
+      duration: 260,
+      easing: Easing.out(Easing.poly(4)),
+      useNativeDriver: false, // animates layout property
+    }).start();
+  }
 
   function handlePhoneChange(text: string) {
     const cleaned = sanitizePhoneNumber(text).substring(0, 10);
@@ -45,221 +125,338 @@ export function PhoneScreen() {
       setError(Strings.auth.phoneError);
       return;
     }
-
     setIsLoading(true);
+    setError('');
     try {
-      // In production: pass Firebase RecaptchaVerifier
-      // For now navigate with placeholder verificationId
-      // Real implementation: call sendOTP(cleaned, recaptchaVerifier)
+      const result = await sendOTP(cleaned);
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+      // sendOTP stores the ConfirmationResult internally;
+      // OTPScreen calls verifyOTP() which retrieves it.
       navigation.navigate('OTP', {
         phone: cleaned,
-        verificationId: 'FIREBASE_VERIFICATION_ID',
+        verificationId: 'native', // marker — actual confirmation is in auth.service
         role,
       });
-    } catch (err) {
+    } catch {
       setError(Strings.errors.generic);
     } finally {
       setIsLoading(false);
     }
   }
 
+  const canSubmit = phone.length === 10 && !isLoading;
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar
-        backgroundColor={Colors.navigationRed}
-        barStyle="light-content"
-      />
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled">
+    <View style={styles.root}>
+      <StatusBar backgroundColor="transparent" translucent barStyle="light-content" />
 
-          {/* Hero */}
-          <View style={styles.hero}>
-            <View style={styles.logoContainer}>
-              <Text style={styles.logoEmoji}>✂️</Text>
-            </View>
-            <Text style={styles.appName}>{Strings.app.name}</Text>
-            <Text style={styles.tagline}>{Strings.app.tagline}</Text>
-          </View>
+      {/* Full-screen gradient */}
+      <LinearGradient colors={HERO_GRADIENT} locations={[0, 0.3, 0.65, 1]} style={StyleSheet.absoluteFill} />
 
-          {/* Role Toggle */}
-          <View style={styles.roleToggle}>
-            <TouchableOpacity
-              style={[styles.roleBtn, role === 'customer' && styles.roleBtnActive]}
-              onPress={() => setRole('customer')}
-              activeOpacity={0.8}>
-              <Text style={styles.roleEmoji}>💇</Text>
-              <Text style={[styles.roleLabel, role === 'customer' && styles.roleLabelActive]}>
-                Customer
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.roleBtn, role === 'owner' && styles.roleBtnActive]}
-              onPress={() => setRole('owner')}
-              activeOpacity={0.8}>
-              <Text style={styles.roleEmoji}>💼</Text>
-              <Text style={[styles.roleLabel, role === 'owner' && styles.roleLabelActive]}>
-                Salon Owner
-              </Text>
-            </TouchableOpacity>
-          </View>
+      {/* ── Hero ─────────────────────────────────────────────────────────── */}
+      <SafeAreaView edges={['top']} style={styles.heroSafe}>
+        <Animated.View
+          style={[
+            styles.heroContent,
+            { opacity: heroOpacity },
+          ]}>
 
-          {/* Phone Input */}
-          <View style={styles.form}>
-            <Text style={styles.formLabel}>{Strings.auth.phoneLabel}</Text>
-            <View style={[styles.phoneInput, error ? styles.phoneInputError : null]}>
-              <View style={styles.countryCode}>
-                <Text style={styles.flag}>🇮🇳</Text>
-                <Text style={styles.code}>+91</Text>
+          {/* Floating logo */}
+          <Animated.View
+            style={{
+              transform: [
+                { scale: logoScale },
+                { translateY: Animated.add(logoSlide, logoFloat) },
+              ],
+            }}>
+            <View style={styles.logoRing}>
+              <View style={styles.logoInner}>
+                <Text style={styles.logoEmoji}>✂️</Text>
               </View>
-              <View style={styles.divider} />
+            </View>
+          </Animated.View>
+
+          <Text style={styles.appName}>{Strings.app.name}</Text>
+          <Text style={styles.tagline}>{Strings.app.tagline}</Text>
+        </Animated.View>
+      </SafeAreaView>
+
+      {/* ── Bottom Card ──────────────────────────────────────────────────── */}
+      <KeyboardAvoidingView
+        style={styles.kavFlex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <Animated.View
+          style={[
+            styles.card,
+            { opacity: cardOpacity, transform: [{ translateY: cardSlide }] },
+          ]}>
+          <ScrollView
+            contentContainerStyle={styles.cardContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}>
+
+            <Text style={styles.cardTitle}>Welcome</Text>
+            <Text style={styles.cardSubtitle}>Sign in with your mobile number</Text>
+
+            {/* ── Role Toggle ─────────────────────────────────────────── */}
+            <View style={styles.toggleWrapper}>
+              {/* Sliding white pill */}
+              <Animated.View
+                style={[styles.toggleIndicator, { left: Animated.add(indicatorX, TOGGLE_PADDING) }]}
+              />
+              <TouchableOpacity
+                style={styles.toggleBtn}
+                onPress={() => handleRoleSwitch('customer')}
+                activeOpacity={0.85}>
+                <Text style={styles.toggleEmoji}>💇</Text>
+                <Text style={[styles.toggleLabel, role === 'customer' && styles.toggleLabelActive]}>
+                  Customer
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.toggleBtn}
+                onPress={() => handleRoleSwitch('owner')}
+                activeOpacity={0.85}>
+                <Text style={styles.toggleEmoji}>💼</Text>
+                <Text style={[styles.toggleLabel, role === 'owner' && styles.toggleLabelActive]}>
+                  Salon Owner
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* ── Phone Input ─────────────────────────────────────────── */}
+            <Text style={styles.inputLabel}>MOBILE NUMBER</Text>
+            <View
+              style={[
+                styles.phoneRow,
+                isFocused && styles.phoneRowFocused,
+                !!error   && styles.phoneRowError,
+              ]}>
+              {/* Country prefix */}
+              <View style={styles.prefix}>
+                <Text style={styles.prefixFlag}>🇮🇳</Text>
+                <Text style={styles.prefixCode}>+91</Text>
+              </View>
+              <View style={styles.prefixDivider} />
               <TextInput
-                style={styles.input}
+                style={styles.phoneInput}
                 value={phone}
                 onChangeText={handlePhoneChange}
-                placeholder={Strings.auth.phonePlaceholder}
+                placeholder="00000 00000"
                 placeholderTextColor={Colors.textTertiary}
                 keyboardType="number-pad"
                 maxLength={10}
                 returnKeyType="done"
                 onSubmitEditing={handleSendOTP}
+                onFocus={() => setIsFocused(true)}
+                onBlur={() => setIsFocused(false)}
               />
+              {phone.length === 10 && (
+                <View style={styles.checkBadge}>
+                  <Text style={styles.checkMark}>✓</Text>
+                </View>
+              )}
             </View>
-            {error ? (
-              <Text style={styles.errorText}>{error}</Text>
-            ) : (
-              <Text style={styles.hintText}>{Strings.auth.phoneHint}</Text>
-            )}
 
-            <Button
-              title={Strings.auth.sendOtp}
+            {error
+              ? <Text style={styles.errorText}>{error}</Text>
+              : <Text style={styles.hintText}>We'll send a 6-digit OTP to verify</Text>
+            }
+
+            {/* ── CTA Button ──────────────────────────────────────────── */}
+            <TouchableOpacity
+              style={[styles.cta, !canSubmit && styles.ctaDisabled]}
               onPress={handleSendOTP}
-              isLoading={isLoading}
-              disabled={phone.length !== 10}
-              fullWidth
-              size="lg"
-              style={styles.button}
-            />
-          </View>
+              disabled={!canSubmit}
+              activeOpacity={0.85}>
+              <LinearGradient
+                colors={canSubmit ? CTA_GRADIENT : CTA_DISABLED}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.ctaGradient}>
+                {isLoading
+                  ? <ActivityIndicator color={Colors.white} size="small" />
+                  : <Text style={styles.ctaText}>Get OTP  →</Text>
+                }
+              </LinearGradient>
+            </TouchableOpacity>
 
-          {/* Footer */}
-          <Text style={styles.footer}>
-            By continuing, you agree to our Terms of Service and Privacy Policy.
-          </Text>
-        </ScrollView>
+            {/* Footer */}
+            <Text style={styles.footer}>
+              By continuing you agree to our{' '}
+              <Text style={styles.footerLink}>Terms</Text>
+              {' '}&amp;{' '}
+              <Text style={styles.footerLink}>Privacy Policy</Text>
+            </Text>
+
+          </ScrollView>
+        </Animated.View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: Colors.navigationRed },
-  flex: { flex: 1, backgroundColor: Colors.background },
-  scrollContent: { flexGrow: 1, paddingBottom: Spacing[8] },
+  root: { flex: 1, backgroundColor: '#0D0000' },
 
-  hero: {
-    backgroundColor: Colors.navigationRed,
-    alignItems: 'center',
-    paddingTop: Spacing[8],
-    paddingBottom: Spacing[8],
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
-  },
-  logoContainer: {
-    width: 80,
-    height: 80,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 40,
+  // Hero
+  heroSafe: { flex: 2 },
+  heroContent: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+
+  logoRing: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.22)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Spacing[3],
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    marginBottom: Spacing[5],
   },
-  logoEmoji: { fontSize: 40 },
+  logoInner: {
+    width: 74,
+    height: 74,
+    borderRadius: 37,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoEmoji: { fontSize: 38 },
+
   appName: {
     fontSize: Typography['4xl'],
     fontWeight: Typography.black,
     color: Colors.white,
-    letterSpacing: 2,
+    letterSpacing: 3,
+    textAlign: 'center',
   },
   tagline: {
-    fontSize: Typography.base,
-    color: 'rgba(255,255,255,0.8)',
+    fontSize: Typography.sm,
+    color: 'rgba(255,255,255,0.65)',
     marginTop: Spacing[2],
     fontWeight: Typography.medium,
+    letterSpacing: 0.8,
+    textAlign: 'center',
   },
 
-  roleToggle: {
-    flexDirection: 'row',
-    margin: Spacing[5],
-    gap: Spacing[3],
+  // Card
+  kavFlex: { flex: 3 },
+  card: {
+    flex: 1,
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: 36,
+    borderTopRightRadius: 36,
+    ...Shadow.xl,
   },
-  roleBtn: {
+  cardContent: {
+    paddingHorizontal: Spacing[5],
+    paddingTop: Spacing[7],
+    paddingBottom: Spacing[10],
+  },
+  cardTitle: {
+    fontSize: Typography['3xl'],
+    fontWeight: Typography.black,
+    color: Colors.textPrimary,
+    letterSpacing: -0.5,
+  },
+  cardSubtitle: {
+    fontSize: Typography.base,
+    color: Colors.textTertiary,
+    marginTop: Spacing[1],
+    marginBottom: Spacing[6],
+  },
+
+  // Role toggle
+  toggleWrapper: {
+    flexDirection: 'row',
+    backgroundColor: Colors.background,
+    borderRadius: Radius.xl,
+    height: 52,
+    marginBottom: Spacing[6],
+    position: 'relative',
+  },
+  toggleIndicator: {
+    position: 'absolute',
+    top: TOGGLE_PADDING,
+    bottom: TOGGLE_PADDING,
+    width: INDICATOR_WIDTH - TOGGLE_PADDING * 2,
+    backgroundColor: Colors.white,
+    borderRadius: Radius.lg,
+    ...Shadow.sm,
+  },
+  toggleBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: Spacing[4],
-    gap: Spacing[2],
-    borderRadius: Radius.lg,
-    borderWidth: 2,
-    borderColor: Colors.border,
-    backgroundColor: Colors.white,
+    gap: 6,
+    zIndex: 1,
   },
-  roleBtnActive: {
-    borderColor: Colors.navigationRed,
-    backgroundColor: Colors.navigationRedSurface,
-  },
-  roleEmoji: { fontSize: 20 },
-  roleLabel: {
-    fontSize: Typography.sm,
-    fontWeight: Typography.bold,
-    color: Colors.textSecondary,
-  },
-  roleLabelActive: { color: Colors.navigationRed },
-
-  form: { paddingHorizontal: Spacing[5] },
-  formLabel: {
+  toggleEmoji: { fontSize: 17 },
+  toggleLabel: {
     fontSize: Typography.sm,
     fontWeight: Typography.semibold,
-    color: Colors.textSecondary,
-    marginBottom: Spacing[2],
-    letterSpacing: 0.3,
+    color: Colors.textTertiary,
   },
-  phoneInput: {
+  toggleLabelActive: { color: Colors.navigationRed },
+
+  // Input
+  inputLabel: {
+    fontSize: 10,
+    fontWeight: Typography.bold,
+    color: Colors.textTertiary,
+    letterSpacing: 1.5,
+    marginBottom: Spacing[2],
+  },
+  phoneRow: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1.5,
     borderColor: Colors.border,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
     backgroundColor: Colors.white,
-    minHeight: 56,
-    overflow: 'hidden',
+    minHeight: 60,
+    ...Shadow.sm,
   },
-  phoneInputError: { borderColor: Colors.error },
-  countryCode: {
+  phoneRowFocused: { borderColor: Colors.navigationRed, ...Shadow.md },
+  phoneRowError:   { borderColor: Colors.error },
+  prefix: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing[3],
+    paddingHorizontal: Spacing[4],
     gap: 6,
   },
-  flag: { fontSize: 20 },
-  code: {
+  prefixFlag: { fontSize: 22 },
+  prefixCode: {
     fontSize: Typography.base,
     fontWeight: Typography.bold,
     color: Colors.textPrimary,
   },
-  divider: { width: 1, height: 32, backgroundColor: Colors.border },
-  input: {
+  prefixDivider: { width: 1.5, height: 32, backgroundColor: Colors.borderLight },
+  phoneInput: {
     flex: 1,
-    paddingHorizontal: Spacing[3],
-    fontSize: Typography.lg,
+    paddingHorizontal: Spacing[4],
+    fontSize: Typography.xl,
     fontWeight: Typography.semibold,
     color: Colors.textPrimary,
-    letterSpacing: 1,
+    letterSpacing: 2,
   },
+  checkBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.success,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing[3],
+  },
+  checkMark: { color: Colors.white, fontSize: 13, fontWeight: Typography.bold },
+
   errorText: {
     color: Colors.error,
     fontSize: Typography.xs,
@@ -270,14 +467,30 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     fontSize: Typography.xs,
     marginTop: Spacing[2],
+    letterSpacing: 0.2,
   },
-  button: { marginTop: Spacing[5] },
+
+  // CTA
+  cta: { marginTop: Spacing[6], borderRadius: Radius.xl, overflow: 'hidden', ...Shadow.lg },
+  ctaDisabled: { opacity: 0.55 },
+  ctaGradient: { paddingVertical: 18, alignItems: 'center', justifyContent: 'center' },
+  ctaText: {
+    fontSize: Typography.lg,
+    fontWeight: Typography.black,
+    color: Colors.white,
+    letterSpacing: 0.8,
+  },
+
+  // Footer
   footer: {
     textAlign: 'center',
     color: Colors.textTertiary,
     fontSize: Typography.xs,
-    paddingHorizontal: Spacing[8],
     marginTop: Spacing[5],
-    lineHeight: 18,
+    lineHeight: 20,
+  },
+  footerLink: {
+    color: Colors.navigationRed,
+    fontWeight: Typography.semibold,
   },
 });
