@@ -75,9 +75,10 @@ export const registerCustomer = async (
     logger.info(`Customer registered/logged in: ${user._id}`);
 
     return { user, tokens };
-  } catch (error) {
+  } catch (error: any) {
     logger.error('Error registering customer:', error);
-    throw new Error('Failed to register customer');
+    // Preserve the original message so callers can see the actual cause
+    throw new Error(error?.message ?? 'Failed to register customer');
   }
 };
 

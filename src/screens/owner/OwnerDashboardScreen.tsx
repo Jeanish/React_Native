@@ -13,7 +13,6 @@ import {
   TouchableOpacity,
   Alert,
   RefreshControl,
-  Switch,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { Colors, Typography, Spacing, Radius, Shadow } from '../../constants/theme';
@@ -26,7 +25,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { OwnerTabParamList } from '../../types';
-import { fetchMySalon, toSalonWithMetaFromApi } from '../../services/api/salon.service';
+import { fetchMySalon, toSalonWithMetaFromApi, type ApiSalon } from '../../services/api/salon.service';
 import { fetchSalonAppointments, updateAppointmentStatus, type ApiAppointment } from '../../services/api/booking.service';
 import type { Appointment, Salon } from '../../types';
 import { todayDateString, formatPrice } from '../../utils/formatters';
@@ -36,10 +35,10 @@ export function OwnerDashboardScreen() {
   const { user } = useAuthStore();
   const navigation = useNavigation<BottomTabNavigationProp<OwnerTabParamList>>();
   const [salon, setSalon] = useState<Salon | null>(null);
+  const [apiSalon, setApiSalon] = useState<ApiSalon | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [togglingOpen, setTogglingOpen] = useState(false);
 
   function apiApptToAppointment(a: ApiAppointment): Appointment {
     const svc = typeof a.serviceId === 'object' ? a.serviceId : null;
@@ -68,7 +67,10 @@ export function OwnerDashboardScreen() {
   async function loadSalon() {
     if (!user) return;
     const result = await fetchMySalon();
-    if (result.data) setSalon(toSalonWithMetaFromApi(result.data) as any);
+    if (result.data) {
+      setApiSalon(result.data);
+      setSalon(toSalonWithMetaFromApi(result.data) as any);
+    }
     setLoading(false);
     setRefreshing(false);
   }
@@ -89,9 +91,6 @@ export function OwnerDashboardScreen() {
     return () => clearInterval(timer);
   }, [salon?.salonId]);
 
-  async function handleToggleOpen(_value: boolean) {
-    Alert.alert('Info', 'Open/close toggle not yet supported via API.');
-  }
 
   async function handleMarkStatus(appt: Appointment, newStatus: 'confirmed' | 'completed' | 'cancelled') {
     const result = await updateAppointmentStatus(appt.appointmentId, newStatus);
@@ -165,18 +164,14 @@ export function OwnerDashboardScreen() {
             {salon?.isOpen && <LiveIndicator />}
           </View>
 
-          {/* Open/Closed Toggle */}
+          {/* Auto Status — derived from working hours, not a toggle */}
           <View style={styles.openToggle}>
             <Text style={styles.openToggleLabel}>
               Salon is {salon?.isOpen ? 'OPEN' : 'CLOSED'}
             </Text>
-            <Switch
-              value={salon?.isOpen ?? false}
-              onValueChange={handleToggleOpen}
-              disabled={togglingOpen}
-              trackColor={{ true: '#A5F3A5', false: 'rgba(255,255,255,0.3)' }}
-              thumbColor={Colors.white}
-            />
+            <Text style={styles.openToggleHint}>
+              Auto-set from working hours · admin manages hours
+            </Text>
           </View>
         </LinearGradient>
 
@@ -402,6 +397,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing[2],
   },
   openToggleLabel: { color: Colors.white, fontSize: Typography.base, fontWeight: Typography.bold },
+  openToggleHint: { color: 'rgba(255,255,255,0.75)', fontSize: Typography.xs, marginTop: 2, fontWeight: Typography.medium },
   section: {
     marginHorizontal: Spacing[4],
     marginBottom: Spacing[4],

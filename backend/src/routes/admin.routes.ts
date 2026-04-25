@@ -3,6 +3,7 @@ import {
   getDashboardStats,
   getPendingSalons,
   approveSalon,
+  markSalonReviewed,
   rejectSalon,
   suspendSalon,
   getAllCategories,
@@ -105,6 +106,7 @@ router.get('/dashboard', getDashboardStats);
 // ─── Salon management ─────────────────────────────────────────────────────────
 router.get('/salons/pending', getPendingSalons);
 router.patch('/salons/:id/approve', approveSalon);
+router.patch('/salons/:id/reviewed', markSalonReviewed);
 router.patch('/salons/:id/reject', validate({ body: rejectSalonSchema }), rejectSalon);
 router.patch('/salons/:id/suspend', validate({ body: suspendSalonSchema }), suspendSalon);
 

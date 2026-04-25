@@ -5,14 +5,14 @@
  * Firestore is NOT used for user data — MongoDB is the source of truth.
  */
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
-import apiClient, { setAccessToken } from '../api/client';
+import apiClient, { setAuthTokens, clearAuthTokens } from '../api/client';
 import type { AppUser, UserRole, ServiceResult } from '../../types';
-import { sanitizePhoneNumber } from '../security/sanitizer';
-import { validateIndianPhone } from '../security/validator';
+import { normalizePhone, isValidIndianPhone } from '../../utils/phone';
 
 // ─── Dev Bypass ───────────────────────────────────────────────────────────────
-const DEV_BYPASS = __DEV__ && true;
-const DEV_BYPASS_CODE = '999977';
+// Strictly gated on __DEV__ so release builds cannot use this path.
+const DEV_BYPASS = __DEV__;
+export const DEV_BYPASS_CODE = '999977';
 
 let _pendingConfirmation: FirebaseAuthTypes.ConfirmationResult | null = null;
 let _devBypassPhone: string | null = null;
@@ -31,8 +31,8 @@ export function clearPendingConfirmation() {
 
 export async function sendOTP(phoneNumber: string): Promise<ServiceResult<string>> {
   try {
-    const cleaned = sanitizePhoneNumber(phoneNumber);
-    if (!validateIndianPhone(cleaned)) {
+    const cleaned = normalizePhone(phoneNumber);
+    if (!isValidIndianPhone(cleaned)) {
       return { error: 'Invalid phone number. Must be a 10-digit Indian number.' };
     }
 
@@ -124,7 +124,7 @@ async function callBackendWithToken(
       role: roleMap[role] ?? role,
     });
     const { user, tokens } = res.data.data;
-    setAccessToken(tokens.accessToken);
+    await setAuthTokens(tokens.accessToken, tokens.refreshToken);
     const appUser: AppUser = {
       uid: user._id,
       phone: user.phone,
@@ -152,7 +152,7 @@ async function callBackendWithPhone(
     // Super admin must log in via dedicated email/password screen, not phone+OTP.
     const res = await apiClient.post('/auth/dev-phone', { phone, role });
     const { user, tokens } = res.data.data;
-    setAccessToken(tokens.accessToken);
+    await setAuthTokens(tokens.accessToken, tokens.refreshToken);
     const appUser: AppUser = {
       uid: user._id,
       phone: user.phone ?? phone,
@@ -214,7 +214,7 @@ export async function updateUserProfile(
 
 export async function signOut(): Promise<void> {
   clearPendingConfirmation();
-  setAccessToken(null);
+  await clearAuthTokens();
   try {
     await auth().signOut();
   } catch {

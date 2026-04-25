@@ -29,14 +29,10 @@ const userSchema = new Schema<IUser>(
       type: String,
       lowercase: true,
       trim: true,
-      sparse: true, // Allows null values while maintaining uniqueness
-      index: true,
     },
     phone: {
       type: String,
       trim: true,
-      sparse: true,
-      index: true,
     },
     password: {
       type: String,

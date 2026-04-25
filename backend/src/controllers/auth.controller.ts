@@ -258,6 +258,22 @@ export const devPhoneLogin = asyncHandler(
       }
       await user.save();
     }
+
+    // Self-heal: if this phone has an orphan salon (previous user was wiped),
+    // reassign it to the current user so their data follows them.
+    if (mappedRole === 'salon_admin') {
+      const { default: Salon } = await import('../models/Salon');
+      const ownedByPhone = await Salon.findOne({ phone });
+      if (ownedByPhone && String(ownedByPhone.ownerId) !== String(user._id)) {
+        const existingOwner = await (await import('../models/User')).User.findById(ownedByPhone.ownerId);
+        if (!existingOwner) {
+          // Original owner deleted — take over.
+          ownedByPhone.ownerId = user._id as any;
+          await ownedByPhone.save();
+        }
+      }
+    }
+
     sendSuccess(res, 'Dev login successful', { user, tokens });
   }
 );

@@ -60,6 +60,20 @@ export const getPendingSalons = async (req: Request, res: Response, next: NextFu
   }
 };
 
+export const markSalonReviewed = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const salon = await Salon.findByIdAndUpdate(id, { hasPendingChanges: false }, { new: true });
+    if (!salon) {
+      res.status(404).json({ success: false, message: 'Salon not found' });
+      return;
+    }
+    res.status(200).json({ success: true, message: 'Marked as reviewed', data: salon });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const approveSalon = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
@@ -258,6 +272,7 @@ export default {
   getDashboardStats,
   getPendingSalons,
   approveSalon,
+  markSalonReviewed,
   rejectSalon,
   suspendSalon,
   getAllCategories,

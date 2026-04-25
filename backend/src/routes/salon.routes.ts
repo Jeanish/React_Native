@@ -71,6 +71,7 @@ const updateSalonSchema = Joi.object({
     })
   ),
   isActive: Joi.boolean(),
+  manualClosed: Joi.boolean(),
 });
 
 // Public routes

@@ -17,7 +17,7 @@ interface AuthState {
   setUser: (user: AppUser | null) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   updateUserName: (name: string) => void;
   updateFcmToken: (token: string) => void;
 }
@@ -37,8 +37,12 @@ export const useAuthStore = create<AuthState>()(
 
       setError: (error) => set({ error }),
 
-      logout: () =>
-        set({ user: null, isAuthenticated: false, error: null }),
+      logout: async () => {
+        // Dynamic import avoids a cycle (auth.service → client → storage → authStore).
+        const { signOut } = await import('../services/firebase/auth.service');
+        await signOut();
+        set({ user: null, isAuthenticated: false, error: null });
+      },
 
       updateUserName: (name) =>
         set(state => ({

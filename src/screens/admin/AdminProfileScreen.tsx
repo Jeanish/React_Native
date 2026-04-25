@@ -16,7 +16,6 @@ import LinearGradient from 'react-native-linear-gradient';
 import { Colors, Typography, Spacing, Radius, Shadow } from '../../constants/theme';
 import { Button } from '../../components/ui/Button';
 import { useAuthStore } from '../../store/authStore';
-import { signOut } from '../../services/firebase/auth.service';
 import { fetchSalons, toSalonWithMetaFromApi } from '../../services/api/salon.service';
 import { formatPhone } from '../../utils/formatters';
 import type { Salon } from '../../types';
@@ -47,8 +46,7 @@ export function AdminProfileScreen() {
           text: 'Sign Out',
           style: 'destructive',
           onPress: async () => {
-            await signOut();
-            logout();
+            await logout();
           },
         },
       ],

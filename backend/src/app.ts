@@ -85,7 +85,19 @@ app.use(`/api/${env.API_VERSION}/cities`, cityRoutes);
 app.use(`/api/${env.API_VERSION}/services`, serviceRoutes);
 app.use(`/api/${env.API_VERSION}/appointments`, appointmentRoutes);
 app.use(`/api/${env.API_VERSION}/admin`, adminRoutes);
-// TODO: Add remaining routes
+// Public banner endpoint (used by mobile app)
+app.get(`/api/${env.API_VERSION}/banners`, async (req, res, next) => {
+  try {
+    const { getLiveBanners } = await import('./controllers/banner.controller');
+    return getLiveBanners(req, res, next);
+  } catch (e) { next(e); }
+});
+app.post(`/api/${env.API_VERSION}/banners/:id/click`, async (req, res, next) => {
+  try {
+    const { trackBannerClick } = await import('./controllers/banner.controller');
+    return trackBannerClick(req, res, next);
+  } catch (e) { next(e); }
+});
 // app.use(`/api/${env.API_VERSION}/queue`, queueRoutes);
 // app.use(`/api/${env.API_VERSION}/notifications`, notificationRoutes);
 

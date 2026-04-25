@@ -18,7 +18,7 @@ import { Colors, Typography, Spacing, Radius, Shadow } from '../../constants/the
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { useAuthStore } from '../../store/authStore';
-import { signOut, updateUserProfile } from '../../services/firebase/auth.service';
+import { updateUserProfile } from '../../services/firebase/auth.service';
 import { sanitizeName } from '../../services/security/sanitizer';
 import { Strings } from '../../constants/strings';
 import { formatPhone } from '../../utils/formatters';
@@ -58,8 +58,7 @@ export function ProfileScreen() {
           text: Strings.profile.logoutConfirmYes,
           style: 'destructive',
           onPress: async () => {
-            await signOut();
-            logout();
+            await logout();
           },
         },
       ],

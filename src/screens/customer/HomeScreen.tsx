@@ -24,6 +24,7 @@ import { FilterChips } from '../../components/salon/FilterChips';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { LiveIndicator } from '../../components/salon/LiveIndicator';
+import { FadeInView } from '../../components/ui/FadeInView';
 import { useSalons } from '../../hooks/useSalons';
 import { Strings } from '../../constants/strings';
 
@@ -197,8 +198,10 @@ export function HomeScreen() {
   }
 
   const renderSalon = useCallback(
-    ({ item }: { item: SalonWithMeta }) => (
-      <SalonCard salon={item} onPress={() => handleSalonPress(item)} />
+    ({ item, index }: { item: SalonWithMeta; index: number }) => (
+      <FadeInView delay={Math.min(index, 6) * 60}>
+        <SalonCard salon={item} onPress={() => handleSalonPress(item)} />
+      </FadeInView>
     ),
     [],
   );

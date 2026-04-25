@@ -24,6 +24,13 @@ export interface ApiWorkingHour {
   isClosed: boolean;
 }
 
+export interface ApiSalonImage {
+  _id?: string;
+  url: string;
+  publicId: string;
+  isPrimary?: boolean;
+}
+
 export interface ApiSalon {
   _id: string;
   name: string;
@@ -43,11 +50,21 @@ export interface ApiSalon {
   ownerId: string | { _id: string; firstName: string; lastName: string; email: string; phone: string };
   services?: ApiService[];
   workingHours?: ApiWorkingHour[];
-  images?: string[];
+  images?: ApiSalonImage[];
   rating?: { average: number; count: number } | number;
   isActive: boolean;
+  manualClosed?: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export function salonImageUrls(salon: ApiSalon): string[] {
+  return (salon.images ?? []).map(img => img.url);
+}
+
+export function salonPrimaryImage(salon: ApiSalon): string | undefined {
+  const imgs = salon.images ?? [];
+  return (imgs.find(i => i.isPrimary) ?? imgs[0])?.url;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -59,7 +76,8 @@ export function toSalonWithMetaFromApi(salon: ApiSalon): import('../../types').S
   const dayOfWeek = now.getDay();
   const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const todayHours = salon.workingHours?.find(wh => wh.day === dayOfWeek);
-  const isOpenNow = !!(todayHours && !todayHours.isClosed && todayHours.openTime <= currentTime && currentTime <= todayHours.closeTime);
+  const withinHours = !!(todayHours && !todayHours.isClosed && todayHours.openTime <= currentTime && currentTime <= todayHours.closeTime);
+  const isOpenNow = withinHours && !salon.manualClosed;
   return {
     salonId: salon._id,
     name: salon.name,
@@ -75,7 +93,7 @@ export function toSalonWithMetaFromApi(salon: ApiSalon): import('../../types').S
     isOpen: isOpenNow,
     ownerId: typeof salon.ownerId === 'string' ? salon.ownerId : (salon.ownerId as any)?._id ?? '',
     services: (salon.services ?? []).map(s => ({ id: s._id, name: s.name, durationMinutes: s.duration, priceInr: s.price })),
-    photos: salon.images ?? [],
+    photos: salonImageUrls(salon),
     workingHours: {} as any,
     phone: salon.phone,
     createdAt: new Date(salon.createdAt).getTime(),
@@ -168,20 +186,52 @@ export async function upsertMySalon(data: Partial<ApiSalon>): Promise<ServiceRes
 
 // ─── Upload salon images ──────────────────────────────────────────────────────
 
-export async function uploadSalonImage(
+export async function uploadSalonImages(
   salonId: string,
-  uri: string,
-  mimeType = 'image/jpeg',
-): Promise<ServiceResult<string>> {
+  photos: Array<{ uri: string; type?: string; fileName?: string }>,
+): Promise<ServiceResult<ApiSalonImage[]>> {
   try {
     const form = new FormData();
-    form.append('image', { uri, type: mimeType, name: 'photo.jpg' } as any);
+    photos.forEach((p, i) => {
+      form.append('images', {
+        uri: p.uri,
+        type: p.type ?? 'image/jpeg',
+        name: p.fileName ?? `photo-${Date.now()}-${i}.jpg`,
+      } as any);
+    });
     const res = await apiClient.post(`/salons/${salonId}/images`, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000, // uploads can be slow on mobile networks
     });
-    return { data: res.data.data?.imageUrl };
+    return { data: res.data.data?.images ?? [] };
   } catch (err: any) {
-    console.error('[SalonAPI] uploadSalonImage error:', err.message);
-    return { error: 'Failed to upload image.' };
+    console.error('[SalonAPI] uploadSalonImages error:', err.response?.data ?? err.message);
+    return { error: err.response?.data?.message ?? 'Failed to upload images.' };
+  }
+}
+
+export async function setManualClosed(
+  salonId: string,
+  manualClosed: boolean,
+): Promise<ServiceResult<ApiSalon>> {
+  try {
+    const res = await apiClient.put(`/salons/${salonId}`, { manualClosed });
+    return { data: res.data.data };
+  } catch (err: any) {
+    console.error('[SalonAPI] setManualClosed error:', err.response?.data ?? err.message);
+    return { error: err.response?.data?.message ?? 'Failed to update status.' };
+  }
+}
+
+export async function deleteSalonImage(
+  salonId: string,
+  imageId: string,
+): Promise<ServiceResult<void>> {
+  try {
+    await apiClient.delete(`/salons/${salonId}/images/${imageId}`);
+    return {};
+  } catch (err: any) {
+    console.error('[SalonAPI] deleteSalonImage error:', err.response?.data ?? err.message);
+    return { error: err.response?.data?.message ?? 'Failed to delete image.' };
   }
 }

@@ -120,12 +120,26 @@ export const updateSalon = async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    if (salon.ownerId.toString() !== userId) {
+    const isAdmin = req.user?.role === 'super_admin';
+    const isOwner = salon.ownerId.toString() === userId;
+    if (!isAdmin && !isOwner) {
       res.status(403).json({ success: false, message: 'You are not authorized to update this salon' });
       return;
     }
 
+    // Strip fields that are always admin-controlled.
     const { status: _s, rating: _r, approvedBy: _a, approvedAt: _at, ownerId: _o, ...updateData } = req.body;
+    // Owners cannot change working hours — only admin can.
+    if (!isAdmin && 'workingHours' in updateData) {
+      delete (updateData as any).workingHours;
+    }
+    // Track pending changes for admin review (except the quick-toggle fields).
+    const ownerChangedCoreInfo =
+      !isAdmin &&
+      Object.keys(updateData).some(k => !['manualClosed'].includes(k));
+    if (ownerChangedCoreInfo) {
+      (updateData as any).hasPendingChanges = true;
+    }
 
     const updatedSalon = await Salon.findByIdAndUpdate(id, updateData, { new: true, runValidators: true })
       .populate('ownerId', 'firstName lastName email phone')

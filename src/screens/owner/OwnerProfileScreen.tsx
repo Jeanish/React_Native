@@ -18,7 +18,7 @@ import { Colors, Typography, Spacing, Radius, Shadow } from '../../constants/the
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { useAuthStore } from '../../store/authStore';
-import { signOut, updateUserProfile } from '../../services/firebase/auth.service';
+import { updateUserProfile } from '../../services/firebase/auth.service';
 import { fetchMySalon, toSalonWithMetaFromApi } from '../../services/api/salon.service';
 import { sanitizeName } from '../../services/security/sanitizer';
 import { formatPhone } from '../../utils/formatters';
@@ -67,8 +67,7 @@ export function OwnerProfileScreen() {
           text: 'Sign Out',
           style: 'destructive',
           onPress: async () => {
-            await signOut();
-            logout();
+            await logout();
           },
         },
       ],

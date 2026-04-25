@@ -20,10 +20,11 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { useAuthStore } from '../../store/authStore';
-import { fetchMySalon, upsertMySalon, toSalonWithMetaFromApi } from '../../services/api/salon.service';
+import { fetchMySalon, upsertMySalon, toSalonWithMetaFromApi, type ApiSalon } from '../../services/api/salon.service';
 import type { Salon, SalonService, SalonCategory } from '../../types';
 import { sanitizeText, sanitizeName, sanitizePrice, sanitizeDuration, sanitizeSeats } from '../../services/security/sanitizer';
 import { Strings } from '../../constants/strings';
+import { SalonPhotoManager } from '../../components/salon/SalonPhotoManager';
 
 function generateId() {
   return Math.random().toString(36).substring(2, 10);
@@ -32,8 +33,14 @@ function generateId() {
 export function SalonSetupScreen() {
   const { user } = useAuthStore();
   const [salon, setSalon] = useState<Partial<Salon>>({});
+  const [apiSalon, setApiSalon] = useState<ApiSalon | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  async function refreshSalon() {
+    const result = await fetchMySalon();
+    if (result.data) setApiSalon(result.data);
+  }
 
   // Form fields
   const [name, setName] = useState('');
@@ -53,6 +60,7 @@ export function SalonSetupScreen() {
       if (!user) return;
       const result = await fetchMySalon();
       if (result.data) {
+        setApiSalon(result.data);
         const existing = toSalonWithMetaFromApi(result.data);
         setSalon(existing as any);
         setName(existing.name);
@@ -107,25 +115,20 @@ export function SalonSetupScreen() {
     const result = await upsertMySalon({
       name: sanitizeName(name),
       phone: phone.replace(/\D/g, '').substring(0, 10),
-      category,
       address: {
         street: sanitizeText(address),
         city: 'Pune',
         state: 'Maharashtra',
+        zipCode: '411001',
         country: 'India',
-      },
+      } as any,
       location: { type: 'Point', coordinates: [lng, lat] },
-      services: services.map(s => ({
-        _id: s.id,
-        name: s.name,
-        price: s.priceInr,
-        duration: s.durationMinutes,
-      })) as any,
     });
 
     if (result.error) {
       Alert.alert('Save Failed', result.error);
     } else {
+      if (result.data) setApiSalon(result.data);
       Alert.alert('Saved!', 'Your salon profile has been saved. An admin will verify it shortly.');
     }
     setSaving(false);
@@ -255,6 +258,24 @@ export function SalonSetupScreen() {
             />
           </View>
         </View>
+
+        {/* Photos — only after salon exists (needs _id for upload endpoint) */}
+        {apiSalon?._id && (
+          <View style={styles.card}>
+            <SalonPhotoManager
+              salonId={apiSalon._id}
+              images={apiSalon.images ?? []}
+              onChange={refreshSalon}
+            />
+          </View>
+        )}
+        {!apiSalon?._id && (
+          <View style={[styles.card, { alignItems: 'center', padding: Spacing[5] }]}>
+            <Text style={{ fontSize: Typography.sm, color: Colors.textSecondary, textAlign: 'center' }}>
+              📷 Save your salon first, then add photos here.
+            </Text>
+          </View>
+        )}
 
         {/* Services */}
         <View style={styles.card}>

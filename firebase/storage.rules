@@ -1,0 +1,46 @@
+// TrimCity — Firebase Storage Security Rules v1.0
+
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ── Salon Photos ──────────────────────────────────────────────────────────
+    // Only authenticated salon owners can upload photos for their salon.
+    // Path: salon_photos/{salonId}/{filename}
+
+    match /salon_photos/{salonId}/{filename} {
+      // Public read (for displaying in app)
+      allow read: if true;
+
+      // Write: authenticated users who own the salon
+      allow write: if request.auth != null
+        && request.resource.size < 5 * 1024 * 1024          // max 5MB
+        && request.resource.contentType.matches('image/.*')  // images only
+        && firestore.get(/databases/(default)/documents/salons/$(salonId))
+              .data.ownerId == request.auth.uid;
+
+      allow delete: if request.auth != null
+        && firestore.get(/databases/(default)/documents/salons/$(salonId))
+              .data.ownerId == request.auth.uid;
+    }
+
+    // ── User Profile Photos ───────────────────────────────────────────────────
+    // Path: user_photos/{userId}/{filename}
+
+    match /user_photos/{userId}/{filename} {
+      allow read: if true;
+
+      allow write: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.size < 2 * 1024 * 1024          // max 2MB
+        && request.resource.contentType.matches('image/.*');
+
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Block all other paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

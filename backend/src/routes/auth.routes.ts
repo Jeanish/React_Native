@@ -74,6 +74,6 @@ router.get('/me', authenticate, getCurrentUser);
 router.patch('/profile', authenticate, updateProfile);
 
 // Dev-only: bypass Firebase OTP
-router.post('/dev-phone', devPhoneLogin);
+router.post('/dev-phone', authLimiter, devPhoneLogin);
 
 export default router;

@@ -1,46 +1,36 @@
 /**
- * TrimCity — useAuth Hook
- * Bootstraps auth state from Firebase on app start.
+ * Bootstraps auth state on app start.
+ * Source of truth: backend JWT (persisted in AsyncStorage).
+ * Firebase is used only for phone OTP, not as a source of identity.
  */
 import { useEffect } from 'react';
-import { onAuthStateChange, fetchUserProfile } from '../services/firebase/auth.service';
+import { initAuthFromStorage } from '../services/api/client';
+import { fetchUserProfile } from '../services/firebase/auth.service';
 import { useAuthStore } from '../store/authStore';
 
 export function useAuth() {
   const { setUser, setLoading, user, isAuthenticated, isLoading } = useAuthStore();
 
   useEffect(() => {
-    // Fallback: if Firebase doesn't respond within 5s (e.g. invalid config),
-    // clear the loading state so the app can proceed to the Auth screen.
-    const timeout = setTimeout(() => setLoading(false), 5000);
-
-    let unsub: () => void;
-    try {
-      unsub = onAuthStateChange(async firebaseUser => {
-        clearTimeout(timeout);
-        if (firebaseUser) {
-          const profile = await fetchUserProfile(firebaseUser.uid);
-          // If Firestore is offline, profile is null — don't wipe the user
-          // that verifyOTP already set (e.g. dev bypass or just-registered user)
-          if (profile) {
-            setUser(profile);
-          }
-          // else: keep existing store user set by verifyOTP
-        } else {
+    let cancelled = false;
+    (async () => {
+      const hasTokens = await initAuthFromStorage();
+      if (!hasTokens) {
+        // No tokens → forcibly clear any stale persisted user. Prevents the
+        // "logged-in but every API 401s" state after sign-out or app wipe.
+        if (!cancelled) {
           setUser(null);
+          setLoading(false);
         }
-        setLoading(false);
-      });
-    } catch {
-      clearTimeout(timeout);
+        return;
+      }
+      const result = await fetchUserProfile();
+      if (cancelled) return;
+      if (result.data) setUser(result.data);
+      else setUser(null); // token invalid — force re-login
       setLoading(false);
-      unsub = () => {};
-    }
-
-    return () => {
-      clearTimeout(timeout);
-      unsub?.();
-    };
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   return { user, isAuthenticated, isLoading };

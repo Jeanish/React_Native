@@ -38,6 +38,8 @@ export interface ISalon extends Document {
     count: number;
   };
   isActive: boolean;
+  manualClosed: boolean; // owner-controlled "close now" override
+  hasPendingChanges: boolean; // set when owner edits core info; cleared by admin after review
   rejectionReason?: string;
   approvedBy?: mongoose.Types.ObjectId;
   approvedAt?: Date;
@@ -181,6 +183,14 @@ const salonSchema = new Schema<ISalon>(
       type: Boolean,
       default: true,
     },
+    manualClosed: {
+      type: Boolean,
+      default: false,
+    },
+    hasPendingChanges: {
+      type: Boolean,
+      default: false,
+    },
     rejectionReason: {
       type: String,
       trim: true,
@@ -200,7 +210,7 @@ const salonSchema = new Schema<ISalon>(
 
 // Indexes
 salonSchema.index({ location: '2dsphere' });
-salonSchema.index({ ownerId: 1 });
+salonSchema.index({ ownerId: 1 }, { unique: true });
 salonSchema.index({ status: 1 });
 salonSchema.index({ categoryId: 1 });
 salonSchema.index({ 'address.city': 1, status: 1 });

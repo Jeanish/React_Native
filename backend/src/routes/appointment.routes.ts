@@ -5,6 +5,7 @@ import {
   getAppointment,
   getUserAppointments,
   getSalonAppointmentsController,
+  getMySalonAppointmentsController,
   confirmAppointmentController,
   startAppointmentController,
   completeAppointmentController,
@@ -44,8 +45,9 @@ const completeAppointmentSchema = Joi.object({
 // Public
 router.get('/salons/:salonId/available-slots', getAvailableSlots);
 
-// Customer routes — /upcoming must be before /:id
+// Specific routes must come before /:id so Express doesn't treat them as ids.
 router.get('/upcoming', authenticate, requireCustomer, getUpcomingAppointmentsController);
+router.get('/my-salon', authenticate, requireSalonAdmin, getMySalonAppointmentsController);
 router.get('/', authenticate, requireCustomer, getUserAppointments);
 router.get('/:id', authenticate, getAppointment);
 

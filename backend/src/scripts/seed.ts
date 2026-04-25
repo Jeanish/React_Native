@@ -270,7 +270,7 @@ async function clearSeedData(): Promise<void> {
     Salon.deleteMany({ isVerified: true }),
     Service.deleteMany({}),
     Appointment.deleteMany({}),
-    User.deleteMany({ phone: { $in: ['0000000001', '0000000002', '9810001111', '9810002222', '9810003333'] } }),
+    User.deleteMany({ phone: { $in: ['0000000001', '9810001111', '9810002222', '9810003333', '9876543210', '9823456789', '9765432109', '9834567890', '9712345678'] } }),
   ]);
   console.log(`   Deleted ${s.deletedCount} salons, ${sv.deletedCount} services, ${a.deletedCount} appointments, ${u.deletedCount} seed users`);
 }
@@ -325,19 +325,31 @@ async function main(): Promise<void> {
     console.log('   – super_admin already exists (admin@trimcity.in)');
   }
 
-  // 2. Seed salon owner
-  let ownerUser = await User.findOne({ phone: '0000000002' });
-  if (!ownerUser) {
-    ownerUser = await User.create({
-      phone: '0000000002',
-      firstName: 'Rajesh',
-      lastName: 'Kulkarni',
-      role: 'salon_admin',
-      isPhoneVerified: true,
-    });
-    console.log('   ✓ salon_owner  (phone: 0000000002)');
-  } else {
-    console.log('   – salon_owner already exists, skipping');
+  // 2. Seed one salon owner per salon — each owner's phone matches the salon's contact phone.
+  // This lets a tester log in as any salon's owner just by entering that salon's phone.
+  const ownersBySalonPhone = new Map<string, mongoose.Types.ObjectId>();
+  const ownerPasswordHash = await bcrypt.hash('DevPassword@1234', 12);
+  for (const def of SALONS_DATA) {
+    let owner = await User.findOne({ phone: def.phone });
+    if (!owner) {
+      owner = await User.create({
+        phone: def.phone,
+        email: `owner-${def.phone}@trimcity.local`,
+        password: ownerPasswordHash,
+        firstName: def.name.split(' ')[0],
+        lastName: 'Owner',
+        role: 'salon_admin',
+        isPhoneVerified: true,
+      });
+      console.log(`   ✓ owner for ${def.name}  (phone: ${def.phone})`);
+    } else if (owner.role !== 'salon_admin') {
+      owner.role = 'salon_admin';
+      if (!owner.email) owner.email = `owner-${def.phone}@trimcity.local`;
+      if (!owner.password) owner.password = ownerPasswordHash;
+      await owner.save();
+      console.log(`   ↻ promoted existing user to owner for ${def.name}`);
+    }
+    ownersBySalonPhone.set(def.phone, owner._id as mongoose.Types.ObjectId);
   }
 
   // 3. Seed customer users
@@ -373,9 +385,14 @@ async function main(): Promise<void> {
     const { services: serviceDefs, ...salonData } = def;
 
     let salon = await Salon.findOne({ name: def.name });
+    const ownerId = ownersBySalonPhone.get(def.phone)!;
     if (!salon) {
-      salon = await Salon.create({ ...salonData, ownerId: ownerUser._id, status: 'approved' });
+      salon = await Salon.create({ ...salonData, ownerId, status: 'approved' });
       console.log(`   ✓ ${def.name}`);
+    } else if (salon.ownerId.toString() !== ownerId.toString()) {
+      salon.ownerId = ownerId;
+      await salon.save();
+      console.log(`   ↻ reassigned owner for ${def.name}`);
     } else {
       console.log(`   – ${def.name} already exists, skipping`);
     }
@@ -451,7 +468,8 @@ async function main(): Promise<void> {
 
   console.log('\n✅  Seed complete!\n');
   console.log('   Super Admin  phone: 0000000001');
-  console.log('   Salon Owner  phone: 0000000002');
+  console.log('   Salon Owners (one per salon):');
+  SALONS_DATA.forEach(s => console.log(`     • ${s.phone} → ${s.name}`));
   console.log('   Customer 1   phone: 9810001111 (Arjun Sharma)');
   console.log('   Customer 2   phone: 9810002222 (Priya Mehta)');
   console.log('   Customer 3   phone: 9810003333 (Sneha Joshi)\n');

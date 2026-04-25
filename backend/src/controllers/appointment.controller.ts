@@ -124,6 +124,45 @@ export const getUserAppointments = async (req: Request, res: Response, next: Nex
   }
 };
 
+export const getMySalonAppointmentsController = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+    const salon = await Salon.findOne({ ownerId: userId });
+    if (!salon) {
+      res.status(404).json({ success: false, message: 'You do not have a salon registered' });
+      return;
+    }
+    const { status, date, startDate, endDate, page, limit } = req.query;
+    // If a single `date` was provided, treat it as a one-day window.
+    const sd = date ? new Date(date as string) : startDate ? new Date(startDate as string) : undefined;
+    const ed = date
+      ? new Date(new Date(date as string).getTime() + 24 * 60 * 60 * 1000 - 1)
+      : endDate ? new Date(endDate as string) : undefined;
+    const result = await getSalonAppointments(
+      (salon._id as any).toString(),
+      status as AppointmentStatus,
+      sd,
+      ed,
+      page ? parseInt(page as string) : undefined,
+      limit ? parseInt(limit as string) : undefined,
+    );
+    res.status(200).json({
+      success: true,
+      message: 'Appointments retrieved successfully',
+      data: result.appointments,
+      pagination: {
+        page: page ? parseInt(page as string) : 1,
+        limit: limit ? parseInt(limit as string) : 50,
+        total: result.total,
+        pages: result.pages,
+      },
+    });
+  } catch (error) {
+    logger.error('getMySalonAppointments error:', error);
+    next(error);
+  }
+};
+
 export const getSalonAppointmentsController = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { salonId } = req.params;
@@ -267,6 +306,7 @@ export default {
   getAppointment,
   getUserAppointments,
   getSalonAppointmentsController,
+  getMySalonAppointmentsController,
   confirmAppointmentController,
   startAppointmentController,
   completeAppointmentController,

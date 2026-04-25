@@ -15,6 +15,8 @@ import {
   Alert,
   ActivityIndicator,
   FlatList,
+  Image,
+  Dimensions,
 } from 'react-native';
 import { addDays, format, isToday, isTomorrow } from 'date-fns';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -287,6 +289,26 @@ export function SalonDetailScreen() {
           </View>
         </LinearGradient>
 
+        {/* ── Photo Gallery ── */}
+        {salon.photos && salon.photos.length > 0 && (
+          <View style={styles.gallerySection}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.galleryScroll}
+              pagingEnabled
+              snapToInterval={GALLERY_W}
+              decelerationRate="fast">
+              {salon.photos.map((uri, i) => (
+                <Image key={`${uri}-${i}`} source={{ uri }} style={styles.galleryImg} resizeMode="cover" />
+              ))}
+            </ScrollView>
+            {salon.photos.length > 1 && (
+              <Text style={styles.galleryCount}>{salon.photos.length} photos · swipe</Text>
+            )}
+          </View>
+        )}
+
         {/* ── Live Status ── */}
         <View style={styles.section}>
           <SectionHeader title="Live Status" />
@@ -407,9 +429,27 @@ export function SalonDetailScreen() {
   );
 }
 
+const GALLERY_W = Dimensions.get('window').width - Spacing[4] * 2;
+const GALLERY_H = 200;
+
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.background },
   scrollContent: { paddingBottom: Spacing[10] },
+  gallerySection: { marginTop: Spacing[3], marginHorizontal: Spacing[4] },
+  galleryScroll: { gap: Spacing[2] },
+  galleryImg: {
+    width: GALLERY_W,
+    height: GALLERY_H,
+    borderRadius: Radius.xl,
+    backgroundColor: Colors.borderLight,
+  },
+  galleryCount: {
+    textAlign: 'center',
+    marginTop: Spacing[2],
+    fontSize: Typography.xs,
+    color: Colors.textSecondary,
+    fontWeight: Typography.semibold,
+  },
   errorMsg: {
     textAlign: 'center',
     marginTop: Spacing[8],
