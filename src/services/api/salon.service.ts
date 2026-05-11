@@ -78,6 +78,18 @@ export function toSalonWithMetaFromApi(salon: ApiSalon): import('../../types').S
   const todayHours = salon.workingHours?.find(wh => wh.day === dayOfWeek);
   const withinHours = !!(todayHours && !todayHours.isClosed && todayHours.openTime <= currentTime && currentTime <= todayHours.closeTime);
   const isOpenNow = withinHours && !salon.manualClosed;
+
+  // Convert array → day-keyed map { sunday: { isOpen, openTime, closeTime }, ... }
+  // The legacy SalonWithMeta type expects this shape; many screens consume it.
+  // Keys must match dayKeyFromDate() output: short, lowercase ('sun', 'mon', ...)
+  const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
+  const workingHoursMap: any = {};
+  for (let i = 0; i < 7; i++) {
+    const wh = salon.workingHours?.find(w => w.day === i);
+    workingHoursMap[DAY_KEYS[i]] = wh
+      ? { isOpen: !wh.isClosed, openTime: wh.openTime, closeTime: wh.closeTime }
+      : { isOpen: false, openTime: '09:00', closeTime: '21:00' };
+  }
   return {
     salonId: salon._id,
     name: salon.name,
@@ -94,7 +106,7 @@ export function toSalonWithMetaFromApi(salon: ApiSalon): import('../../types').S
     ownerId: typeof salon.ownerId === 'string' ? salon.ownerId : (salon.ownerId as any)?._id ?? '',
     services: (salon.services ?? []).map(s => ({ id: s._id, name: s.name, durationMinutes: s.duration, priceInr: s.price })),
     photos: salonImageUrls(salon),
-    workingHours: {} as any,
+    workingHours: workingHoursMap,
     phone: salon.phone,
     createdAt: new Date(salon.createdAt).getTime(),
     updatedAt: new Date(salon.updatedAt).getTime(),
@@ -144,8 +156,21 @@ export async function fetchSalons(params?: {
 
 export async function fetchSalonById(id: string): Promise<ServiceResult<ApiSalon>> {
   try {
-    const res = await apiClient.get(`/salons/${id}`);
-    return { data: res.data.data };
+    // Fetch salon and its services in parallel — services live in a separate collection.
+    const [salonRes, servicesRes] = await Promise.all([
+      apiClient.get(`/salons/${id}`),
+      apiClient.get(`/services/salons/${id}/services`).catch(() => ({ data: { data: [] } })),
+    ]);
+    const salon: ApiSalon = salonRes.data.data;
+    salon.services = (servicesRes.data?.data ?? []).map((s: any) => ({
+      _id: s._id,
+      name: s.name,
+      price: s.effectivePrice ?? s.price,
+      duration: s.duration,
+      description: s.description,
+      category: s.category,
+    }));
+    return { data: salon };
   } catch (err: any) {
     console.error('[SalonAPI] fetchSalonById error:', err.message);
     return { error: err.response?.data?.message ?? 'Salon not found.' };
@@ -157,7 +182,21 @@ export async function fetchSalonById(id: string): Promise<ServiceResult<ApiSalon
 export async function fetchMySalon(): Promise<ServiceResult<ApiSalon>> {
   try {
     const res = await apiClient.get('/salons/my-salon');
-    return { data: res.data.data };
+    const salon: ApiSalon = res.data.data;
+    // Pull services in parallel so owner screens have them available.
+    if (salon?._id) {
+      const svcRes = await apiClient
+        .get(`/services/salons/${salon._id}/services`)
+        .catch(() => ({ data: { data: [] } }));
+      salon.services = (svcRes.data?.data ?? []).map((s: any) => ({
+        _id: s._id,
+        name: s.name,
+        price: s.effectivePrice ?? s.price,
+        duration: s.duration,
+        description: s.description,
+      }));
+    }
+    return { data: salon };
   } catch (err: any) {
     if (err.response?.status === 404) return { data: undefined as any };
     console.error('[SalonAPI] fetchMySalon error:', err.message);

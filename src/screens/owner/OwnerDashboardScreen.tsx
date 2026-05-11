@@ -61,6 +61,7 @@ export function OwnerDashboardScreen() {
       timeSlot: a.startTime, date: a.appointmentDate?.slice(0, 10) ?? '',
       status: statusMap[a.status] ?? 'confirmed',
       createdAt: new Date(a.createdAt).getTime(),
+      updatedAt: new Date(a.createdAt).getTime(),
     };
   }
 

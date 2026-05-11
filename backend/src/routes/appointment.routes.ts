@@ -6,6 +6,7 @@ import {
   getUserAppointments,
   getSalonAppointmentsController,
   getMySalonAppointmentsController,
+  createWalkInAppointmentController,
   confirmAppointmentController,
   startAppointmentController,
   completeAppointmentController,
@@ -57,6 +58,7 @@ router.patch('/:id/reschedule', authenticate, requireCustomer, validate({ body: 
 
 // Salon admin routes
 router.get('/salons/:salonId/appointments', authenticate, requireSalonAdmin, getSalonAppointmentsController);
+router.post('/walk-in', authenticate, requireSalonAdmin, createWalkInAppointmentController);
 router.patch('/:id/confirm', authenticate, requireSalonAdmin, confirmAppointmentController);
 router.patch('/:id/start', authenticate, requireSalonAdmin, startAppointmentController);
 router.patch('/:id/complete', authenticate, requireSalonAdmin, validate({ body: completeAppointmentSchema }), completeAppointmentController);

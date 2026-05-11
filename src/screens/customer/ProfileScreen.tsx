@@ -38,7 +38,7 @@ export function ProfileScreen() {
       return;
     }
     setIsSaving(true);
-    const result = await updateUserProfile(user.uid, { name: sanitized });
+    const result = await updateUserProfile({ name: sanitized });
     if (result.error) {
       Alert.alert('Error', result.error);
     } else {

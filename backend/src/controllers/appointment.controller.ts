@@ -124,6 +124,57 @@ export const getUserAppointments = async (req: Request, res: Response, next: Nex
   }
 };
 
+/**
+ * Walk-in booking by owner: phone + name come from owner input, not the JWT.
+ * If a user with that phone exists, reuse them; otherwise create a lightweight customer.
+ */
+export const createWalkInAppointmentController = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const ownerId = req.user?.id;
+    const { customerPhone, customerName, serviceId, appointmentDate, startTime, notes } = req.body;
+
+    if (!customerPhone || !/^[6-9]\d{9}$|^0\d{9}$/.test(String(customerPhone).replace(/\D/g, '').slice(-10))) {
+      res.status(400).json({ success: false, message: 'Valid 10-digit customer phone is required' });
+      return;
+    }
+    const phone = String(customerPhone).replace(/\D/g, '').slice(-10);
+
+    const salon = await Salon.findOne({ ownerId });
+    if (!salon) {
+      res.status(404).json({ success: false, message: 'You do not have a salon' });
+      return;
+    }
+
+    const { User } = await import('../models/User');
+    let customer = await User.findOne({ phone });
+    if (!customer) {
+      const [firstName, ...rest] = (customerName ?? 'Walk-in').trim().split(' ');
+      customer = await User.create({
+        phone,
+        firstName: firstName || 'Walk-in',
+        lastName: rest.join(' ') || 'Customer',
+        role: 'customer',
+        isPhoneVerified: false,
+        isActive: true,
+      });
+    }
+
+    const appt = await createAppointment({
+      salonId: (salon._id as any).toString(),
+      customerId: (customer._id as any).toString(),
+      serviceIds: [serviceId],
+      appointmentDate: new Date(appointmentDate),
+      startTime,
+      notes,
+    } as any);
+
+    res.status(201).json({ success: true, message: 'Walk-in booked', data: appt });
+  } catch (error: any) {
+    logger.error('createWalkIn error:', error);
+    res.status(400).json({ success: false, message: error?.message ?? 'Walk-in failed' });
+  }
+};
+
 export const getMySalonAppointmentsController = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const userId = req.user?.id;
@@ -307,6 +358,7 @@ export default {
   getUserAppointments,
   getSalonAppointmentsController,
   getMySalonAppointmentsController,
+  createWalkInAppointmentController,
   confirmAppointmentController,
   startAppointmentController,
   completeAppointmentController,

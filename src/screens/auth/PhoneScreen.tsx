@@ -154,7 +154,7 @@ export function PhoneScreen() {
       <StatusBar backgroundColor="transparent" translucent barStyle="light-content" />
 
       {/* Full-screen gradient */}
-      <LinearGradient colors={HERO_GRADIENT} locations={[0, 0.3, 0.65, 1]} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={HERO_GRADIENT as unknown as string[]} locations={[0, 0.3, 0.65, 1]} style={StyleSheet.absoluteFill} />
 
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <SafeAreaView edges={['top']} style={styles.heroSafe}>
@@ -273,7 +273,7 @@ export function PhoneScreen() {
               disabled={!canSubmit}
               activeOpacity={0.85}>
               <LinearGradient
-                colors={canSubmit ? CTA_GRADIENT : CTA_DISABLED}
+                colors={(canSubmit ? CTA_GRADIENT : CTA_DISABLED) as unknown as string[]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.ctaGradient}>

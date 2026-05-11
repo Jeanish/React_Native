@@ -70,6 +70,7 @@ export function SalonSetupScreen() {
         setServices(existing.services);
         setLatitude(String(existing.latitude));
         setLongitude(String(existing.longitude));
+        if ((result.data as any).totalSeats) setTotalSeats(String((result.data as any).totalSeats));
       }
       setLoading(false);
     }
@@ -123,7 +124,8 @@ export function SalonSetupScreen() {
         country: 'India',
       } as any,
       location: { type: 'Point', coordinates: [lng, lat] },
-    });
+      totalSeats: sanitizeSeats(parseInt(String(totalSeats), 10)),
+    } as any);
 
     if (result.error) {
       Alert.alert('Save Failed', result.error);

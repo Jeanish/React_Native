@@ -38,18 +38,38 @@ export interface ApiAppointment {
 
 // ─── Create booking ───────────────────────────────────────────────────────────
 
+/** Convert "11:00 PM" / "09:30 AM" to "23:00" / "09:30". Pass-through if already 24h. */
+function to24h(time: string): string {
+  const trimmed = time.trim();
+  const m = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!m) return trimmed; // already 24h
+  let h = parseInt(m[1], 10);
+  const mm = m[2];
+  const isPm = m[3].toUpperCase() === 'PM';
+  if (isPm && h !== 12) h += 12;
+  if (!isPm && h === 12) h = 0;
+  return `${String(h).padStart(2, '0')}:${mm}`;
+}
+
 export async function createAppointment(data: {
   salonId: string;
   serviceId: string;
   appointmentDate: string; // "YYYY-MM-DD"
-  startTime: string;       // "HH:mm"
+  startTime: string;       // "11:00 PM" or "23:00"
   notes?: string;
 }): Promise<ServiceResult<ApiAppointment>> {
   try {
-    const res = await apiClient.post('/appointments', data);
+    const payload = {
+      salonId: data.salonId,
+      serviceIds: [data.serviceId],     // backend expects array
+      appointmentDate: data.appointmentDate,
+      startTime: to24h(data.startTime), // backend expects 24h HH:mm
+      ...(data.notes ? { notes: data.notes } : {}),
+    };
+    const res = await apiClient.post('/appointments', payload);
     return { data: res.data.data };
   } catch (err: any) {
-    console.error('[BookingAPI] createAppointment error:', err.message);
+    console.error('[BookingAPI] createAppointment error:', err.response?.data ?? err.message);
     return { error: err.response?.data?.message ?? 'Failed to book appointment.' };
   }
 }
@@ -75,6 +95,33 @@ export async function fetchUpcomingAppointments(): Promise<ServiceResult<ApiAppo
   } catch (err: any) {
     console.error('[BookingAPI] fetchUpcoming error:', err.message);
     return { error: err.response?.data?.message ?? 'Failed to load upcoming appointments.' };
+  }
+}
+
+// ─── Walk-in booking (owner) ──────────────────────────────────────────────────
+
+export async function createWalkInAppointment(data: {
+  customerPhone: string;
+  customerName: string;
+  serviceId: string;
+  appointmentDate: string; // "YYYY-MM-DD"
+  startTime: string;       // "11:00 PM" or "23:00"
+  notes?: string;
+}): Promise<ServiceResult<ApiAppointment>> {
+  try {
+    const payload = {
+      customerPhone: data.customerPhone,
+      customerName: data.customerName,
+      serviceId: data.serviceId,
+      appointmentDate: data.appointmentDate,
+      startTime: to24h(data.startTime),
+      ...(data.notes ? { notes: data.notes } : {}),
+    };
+    const res = await apiClient.post('/appointments/walk-in', payload);
+    return { data: res.data.data };
+  } catch (err: any) {
+    console.error('[BookingAPI] createWalkInAppointment error:', err.response?.data ?? err.message);
+    return { error: err.response?.data?.message ?? 'Walk-in booking failed.' };
   }
 }
 

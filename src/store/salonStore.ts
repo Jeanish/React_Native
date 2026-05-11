@@ -100,9 +100,14 @@ export const useSalonStore = create<SalonState>()((set, get) => ({
         result = result.filter(s => s.category === 'unisex');
         break;
       case 'near_me':
-        result = result
-          .filter(s => s.distanceKm !== undefined)
-          .sort((a, b) => (a.distanceKm ?? 999) - (b.distanceKm ?? 999));
+        // If we have user location, sort by distance.
+        // If not (permission denied / not fetched), fall back to showing all salons
+        // instead of an empty list so the UI doesn't appear broken.
+        if (userLocation) {
+          result = result
+            .map(s => ({ ...s, distanceKm: s.distanceKm ?? haversineKm(userLocation.lat, userLocation.lng, s.latitude, s.longitude) }))
+            .sort((a, b) => (a.distanceKm ?? 999) - (b.distanceKm ?? 999));
+        }
         break;
       default:
         break;

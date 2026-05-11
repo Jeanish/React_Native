@@ -69,7 +69,7 @@ function toSalonWithMeta(salon: ApiSalon): SalonWithMeta {
       durationMinutes: s.duration,
       priceInr: s.price,
     })),
-    photos: salon.images ?? [],
+    photos: (salon.images ?? []).map((i: any) => (typeof i === 'string' ? i : i.url)),
     workingHours: {} as any, // legacy shape not needed
     phone: salon.phone,
     createdAt: new Date(salon.createdAt).getTime(),

@@ -28,8 +28,9 @@ import { useAuthStore } from '../../store/authStore';
 import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { OwnerTabParamList } from '../../types';
-import { fetchMySalon, toSalonWithMetaFromApi } from '../../services/api/salon.service';
-import { fetchSalonAppointments, updateAppointmentStatus, type ApiAppointment } from '../../services/api/booking.service';
+import { fetchMySalon, toSalonWithMetaFromApi, type ApiSalon } from '../../services/api/salon.service';
+import { fetchSalonAppointments, updateAppointmentStatus, createWalkInAppointment, type ApiAppointment } from '../../services/api/booking.service';
+import { isValidIndianPhone, normalizePhone } from '../../utils/phone';
 import type { Appointment, Salon } from '../../types';
 import { todayDateString, formatPrice } from '../../utils/formatters';
 import { Strings } from '../../constants/strings';
@@ -66,6 +67,7 @@ export function BookingManagementScreen() {
       timeSlot: a.startTime, date: a.appointmentDate?.slice(0, 10) ?? '',
       status: statusMap[a.status] ?? 'confirmed',
       createdAt: new Date(a.createdAt).getTime(),
+      updatedAt: new Date(a.createdAt).getTime(),
     };
   }
 
@@ -110,8 +112,41 @@ export function BookingManagementScreen() {
   }
 
   async function handleAddWalkIn() {
-    Alert.alert('Info', 'Walk-in booking can be done through the Appointments screen.');
+    if (!walkInName.trim()) {
+      Alert.alert('Missing name', 'Please enter the customer\'s name.');
+      return;
+    }
+    if (!isValidIndianPhone(walkInPhone)) {
+      Alert.alert('Invalid phone', 'Please enter a valid 10-digit phone number.');
+      return;
+    }
+    if (!walkInService) {
+      Alert.alert('Pick a service', 'Please select a service for this walk-in.');
+      return;
+    }
+    setAddingWalkIn(true);
+    // Walk-ins go in for the current 30-min slot, today.
+    const now = new Date();
+    const startTime = `${String(now.getHours()).padStart(2, '0')}:${String(Math.floor(now.getMinutes() / 30) * 30).padStart(2, '0')}`;
+    const result = await createWalkInAppointment({
+      customerName: walkInName.trim(),
+      customerPhone: normalizePhone(walkInPhone),
+      serviceId: walkInService,
+      appointmentDate: todayDateString(),
+      startTime,
+    });
+    setAddingWalkIn(false);
+    if (result.error) {
+      Alert.alert('Walk-in failed', result.error);
+      return;
+    }
     setShowWalkInModal(false);
+    setWalkInName('');
+    setWalkInPhone('');
+    setWalkInService('');
+    // Refresh today's bookings
+    const r = await fetchSalonAppointments({ date: todayDateString() });
+    if (r.data) setAppointments(r.data.map(apiApptToAppointment));
   }
 
   const renderItem = ({ item }: { item: Appointment }) => (
@@ -259,7 +294,7 @@ export function BookingManagementScreen() {
                 label={Strings.bookingManagement.walkInPhone}
                 value={walkInPhone}
                 onChangeText={setWalkInPhone}
-                placeholder="10-digit number (optional)"
+                placeholder="10-digit number (required)"
                 keyboardType="number-pad"
                 maxLength={10}
               />
@@ -275,13 +310,13 @@ export function BookingManagementScreen() {
                       key={svc.id}
                       style={[
                         styles.serviceOption,
-                        walkInService === svc.name && styles.serviceOptionActive,
+                        walkInService === svc.id && styles.serviceOptionActive,
                       ]}
-                      onPress={() => setWalkInService(svc.name)}
+                      onPress={() => setWalkInService(svc.id)}
                       activeOpacity={0.8}>
                       <Text style={[
                         styles.serviceOptionText,
-                        walkInService === svc.name && styles.serviceOptionTextActive,
+                        walkInService === svc.id && styles.serviceOptionTextActive,
                       ]}>
                         {svc.name} · ₹{svc.priceInr}
                       </Text>

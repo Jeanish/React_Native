@@ -38,6 +38,7 @@ export interface ISalon extends Document {
     count: number;
   };
   isActive: boolean;
+  totalSeats: number; // chairs / parallel capacity — caps concurrent bookings per slot
   manualClosed: boolean; // owner-controlled "close now" override
   hasPendingChanges: boolean; // set when owner edits core info; cleared by admin after review
   rejectionReason?: string;
@@ -182,6 +183,11 @@ const salonSchema = new Schema<ISalon>(
     isActive: {
       type: Boolean,
       default: true,
+    },
+    totalSeats: {
+      type: Number,
+      default: 1,
+      min: 1,
     },
     manualClosed: {
       type: Boolean,

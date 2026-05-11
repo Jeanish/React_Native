@@ -40,6 +40,7 @@ function toAppointment(a: ApiAppointment): Appointment {
     date: a.appointmentDate?.slice(0, 10) ?? '',
     status: statusMap[a.status] ?? 'confirmed',
     createdAt: new Date(a.createdAt).getTime(),
+    updatedAt: new Date(a.createdAt).getTime(),
   };
 }
 

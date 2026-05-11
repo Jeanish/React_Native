@@ -1,7 +1,7 @@
 import axios, { AxiosError, AxiosRequestConfig } from 'axios';
 import { saveTokens, loadTokens, clearTokens } from './storage';
 
-const DEV_URL = 'http://10.167.160.41:5000/api/v1';
+const DEV_URL = 'https://bcfe-2401-4900-5768-2b6-a9fb-3d65-2c0f-bda2.ngrok-free.app/api/v1';
 const PROD_URL = 'https://api.trimcity.in/api/v1';
 
 export const API_BASE_URL = __DEV__ ? DEV_URL : PROD_URL;
@@ -9,7 +9,11 @@ export const API_BASE_URL = __DEV__ ? DEV_URL : PROD_URL;
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    // ngrok free tier shows an HTML interstitial unless this header is present.
+    'ngrok-skip-browser-warning': 'true',
+  },
 });
 
 let _accessToken: string | null = null;

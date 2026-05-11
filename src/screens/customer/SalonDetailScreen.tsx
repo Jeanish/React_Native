@@ -161,15 +161,25 @@ export function SalonDetailScreen() {
     setValue('date', selectedDate);
   }, [selectedDate]);
 
-  // Compute time slots for the selected date's working hours
+  // Compute time slots for the selected date's working hours.
+  // - For today, hide slots before now + 30-min lead time.
+  // - When a service is selected, ensure slot + service duration <= close time.
   const timeSlots = useCallback(() => {
     if (!salon) return [];
     const dateObj = new Date(selectedDate + 'T00:00:00');
     const dayKey = dayKeyFromDate(dateObj) as keyof typeof salon.workingHours;
     const day = salon.workingHours[dayKey];
     if (!day?.isOpen) return [];
-    return getTimeSlots(day.openTime, day.closeTime, 30);
-  }, [salon, selectedDate])();
+    const isToday = selectedDate === todayDateString();
+    let minTime: string | undefined;
+    if (isToday) {
+      const now = new Date();
+      const lead = new Date(now.getTime() + 30 * 60_000);
+      minTime = `${String(lead.getHours()).padStart(2, '0')}:${String(lead.getMinutes()).padStart(2, '0')}`;
+    }
+    const svc = selectedServiceId ? salon.services.find(s => s.id === selectedServiceId) : null;
+    return getTimeSlots(day.openTime, day.closeTime, 30, minTime, svc?.durationMinutes);
+  }, [salon, selectedDate, selectedServiceId])();
 
   async function onSubmit(data: BookingFormInput) {
     if (!salon || !user) return;
@@ -207,6 +217,7 @@ export function SalonDetailScreen() {
         date: data.date,
         status: 'confirmed',
         createdAt: Date.now(),
+        updatedAt: Date.now(),
       };
       setLastConfirmed(confirmed);
       navigation.navigate('BookingConfirm', { appointment: confirmed });

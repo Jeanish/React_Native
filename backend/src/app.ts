@@ -20,6 +20,10 @@ import appointmentRoutes from './routes/appointment.routes';
 // Create Express app
 const app: Application = express();
 
+// Trust the first proxy hop so req.ip / X-Forwarded-For work correctly behind
+// ngrok, Cloudflare, or any standard reverse proxy. Required for express-rate-limit.
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet());
 app.use(mongoSanitize());

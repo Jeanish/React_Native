@@ -72,6 +72,7 @@ const updateSalonSchema = Joi.object({
   ),
   isActive: Joi.boolean(),
   manualClosed: Joi.boolean(),
+  totalSeats: Joi.number().integer().min(1).max(50),
 });
 
 // Public routes
