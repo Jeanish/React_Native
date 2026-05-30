@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "19430608767",
+    "project_id": "trimcity-d5937",
+    "storage_bucket": "trimcity-d5937.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:19430608767:android:10f618ad7a5f4eeb0f544a",
+        "android_client_info": {
+          "package_name": "trim_city.apnasalon"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDuCaZFwfQOMcPG9mr_ksGFQd86BHGIw5c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

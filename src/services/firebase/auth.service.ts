@@ -29,7 +29,7 @@ import { validateIndianPhone } from '../security/validator';
 // ─── Dev Bypass ───────────────────────────────────────────────────────────────
 // In development, set DEV_BYPASS = true to skip real OTP entirely.
 // Enter code "DEV999" in the OTP screen to proceed as a mock user.
-const DEV_BYPASS = __DEV__ && true; // ← flip to false when you want real OTP
+const DEV_BYPASS = __DEV__ && false; // ← flip to true to skip real OTP in dev
 const DEV_BYPASS_CODE = '999977';
 
 // ─── Module-level confirmation store ─────────────────────────────────────────
