@@ -41,46 +41,25 @@ export function formatOccupancy(seated: number, total: number): string {
   return `${seated}/${total}`;
 }
 
-/**
- * Generate bookable time slots between openTime and closeTime.
- * - `intervalMinutes`: spacing between slot starts (default 30).
- * - `minTime24h`: hide slots before this wall-clock time (used for "today" filtering).
- * - `serviceDurationMinutes`: ensures the slot finishes before closeTime.
- *   When provided, the last slot offered is `closeTime - duration`, so a 60-min
- *   service in a 10:00-18:00 salon stops offering slots after 17:00.
- */
 export function getTimeSlots(
   openTime: string,
   closeTime: string,
   intervalMinutes = 30,
-  minTime24h?: string,
-  serviceDurationMinutes?: number,
 ): string[] {
   const slots: string[] = [];
   const [openH, openM] = openTime.split(':').map(Number);
   const [closeH, closeM] = closeTime.split(':').map(Number);
 
-  const start = openH * 60 + openM;
+  let current = openH * 60 + openM;
   const end = closeH * 60 + closeM;
-  const slotSpan = serviceDurationMinutes ?? intervalMinutes;
 
-  let cursor = start;
-  if (minTime24h) {
-    const [mh, mm] = minTime24h.split(':').map(Number);
-    const minMinutes = mh * 60 + mm;
-    if (minMinutes > cursor) {
-      const offset = (minMinutes - start) % intervalMinutes;
-      cursor = offset === 0 ? minMinutes : minMinutes + (intervalMinutes - offset);
-    }
-  }
-
-  while (cursor + slotSpan <= end) {
-    const h = Math.floor(cursor / 60);
-    const m = cursor % 60;
+  while (current + intervalMinutes <= end) {
+    const h = Math.floor(current / 60);
+    const m = current % 60;
     const ampm = h >= 12 ? 'PM' : 'AM';
     const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
     slots.push(`${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`);
-    cursor += intervalMinutes;
+    current += intervalMinutes;
   }
 
   return slots;

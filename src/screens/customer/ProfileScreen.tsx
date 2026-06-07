@@ -18,7 +18,7 @@ import { Colors, Typography, Spacing, Radius, Shadow } from '../../constants/the
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { useAuthStore } from '../../store/authStore';
-import { updateUserProfile } from '../../services/firebase/auth.service';
+import { signOut, updateUserProfile } from '../../services/firebase/auth.service';
 import { sanitizeName } from '../../services/security/sanitizer';
 import { Strings } from '../../constants/strings';
 import { formatPhone } from '../../utils/formatters';
@@ -38,7 +38,7 @@ export function ProfileScreen() {
       return;
     }
     setIsSaving(true);
-    const result = await updateUserProfile({ name: sanitized });
+    const result = await updateUserProfile(user.uid, { name: sanitized });
     if (result.error) {
       Alert.alert('Error', result.error);
     } else {
@@ -58,7 +58,8 @@ export function ProfileScreen() {
           text: Strings.profile.logoutConfirmYes,
           style: 'destructive',
           onPress: async () => {
-            await logout();
+            await signOut();
+            logout();
           },
         },
       ],

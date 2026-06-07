@@ -1,11 +1,11 @@
 /**
- * Bootstraps auth state on app start.
- * Source of truth: backend JWT (persisted in AsyncStorage).
- * Firebase is used only for phone OTP, not as a source of identity.
+ * TrimCity — useAuth Hook
+ * Bootstraps auth state from stored JWT tokens on app start.
  */
 import { useEffect } from 'react';
 import { initAuthFromStorage } from '../services/api/client';
-import { fetchUserProfile } from '../services/firebase/auth.service';
+import { fetchCurrentUserProfile } from '../services/api/auth.service';
+import { initPushNotifications } from '../services/firebase/notifications.service';
 import { useAuthStore } from '../store/authStore';
 
 export function useAuth() {
@@ -13,24 +13,35 @@ export function useAuth() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const hasTokens = await initAuthFromStorage();
-      if (!hasTokens) {
-        // No tokens → forcibly clear any stale persisted user. Prevents the
-        // "logged-in but every API 401s" state after sign-out or app wipe.
-        if (!cancelled) {
-          setUser(null);
-          setLoading(false);
+
+    async function init() {
+      try {
+        const hasTokens = await initAuthFromStorage();
+        if (!hasTokens) {
+          if (!cancelled) setUser(null);
+          return;
         }
-        return;
+        const result = await fetchCurrentUserProfile();
+        if (cancelled) return;
+        if (result.data) {
+          setUser(result.data);
+          initPushNotifications();
+        } else {
+          setUser(null);
+        }
+      } catch {
+        // token invalid — force re-login
+        if (!cancelled) setUser(null);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      const result = await fetchUserProfile();
-      if (cancelled) return;
-      if (result.data) setUser(result.data);
-      else setUser(null); // token invalid — force re-login
-      setLoading(false);
-    })();
-    return () => { cancelled = true; };
+    }
+
+    init();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return { user, isAuthenticated, isLoading };

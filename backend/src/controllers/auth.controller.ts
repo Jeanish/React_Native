@@ -216,12 +216,18 @@ export const updateProfile = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!._id;
     const { firstName, lastName, fcmToken } = req.body;
-    const updates: Record<string, string> = {};
-    if (firstName) updates.firstName = firstName;
-    if (lastName) updates.lastName = lastName;
-    if (fcmToken) updates.fcmToken = fcmToken;
+    const set: Record<string, unknown> = {};
+    const unset: Record<string, 1> = {};
+    if (firstName) set.firstName = firstName;
+    if (lastName) set.lastName = lastName;
+    // fcmToken: string sets it; explicit null/'' unsets it (called on logout).
+    if (fcmToken === null || fcmToken === '') unset.fcmToken = 1;
+    else if (typeof fcmToken === 'string') set.fcmToken = fcmToken;
+    const update: any = {};
+    if (Object.keys(set).length) update.$set = set;
+    if (Object.keys(unset).length) update.$unset = unset;
     const user = await (await import('../models/User')).User.findByIdAndUpdate(
-      userId, updates, { new: true }
+      userId, update, { new: true }
     );
     sendSuccess(res, 'Profile updated', { user });
   }

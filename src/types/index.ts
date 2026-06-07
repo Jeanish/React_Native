@@ -8,22 +8,14 @@
 export type UserRole = 'customer' | 'owner' | 'admin';
 
 export interface AppUser {
-  uid: string;       // Firebase UID or MongoDB _id in dev bypass
-  mongoId?: string;  // MongoDB _id
+  uid: string;
   phone: string;
   name: string;
   photoURL?: string;
   role: UserRole;
   fcmToken?: string;
-  accessToken?: string;   // JWT access token
-  refreshToken?: string;  // JWT refresh token
   createdAt: number; // Unix ms
   updatedAt: number;
-}
-
-export interface ServiceResult<T> {
-  data?: T;
-  error?: string;
 }
 
 // ─── Salon ──────────────────────────────────────────────────────────────────
@@ -182,13 +174,11 @@ export type OwnerTabParamList = {
   Dashboard: undefined;
   SalonSetup: undefined;
   BookingMgmt: undefined;
-  OwnerProfile: undefined;
 };
 
 export type AdminTabParamList = {
   AdminSalons: undefined;
   AdminAdd: undefined;
-  AdminProfile: undefined;
 };
 
 export type AdminStackParamList = {

@@ -9,7 +9,6 @@ import { Colors, Typography } from '../constants/theme';
 import type { AdminTabParamList } from '../types';
 import { AdminSalonsScreen } from '../screens/admin/AdminSalonsScreen';
 import { AdminAddSalonScreen } from '../screens/admin/AdminAddSalonScreen';
-import { AdminProfileScreen } from '../screens/admin/AdminProfileScreen';
 
 const Tab = createBottomTabNavigator<AdminTabParamList>();
 
@@ -53,15 +52,6 @@ export function AdminNavigator() {
         options={{
           tabBarIcon: ({ focused }) => (
             <TabIcon emoji="➕" label="Add Salon" focused={focused} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="AdminProfile"
-        component={AdminProfileScreen}
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="👤" label="Profile" focused={focused} />
           ),
         }}
       />

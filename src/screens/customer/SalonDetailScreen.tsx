@@ -15,8 +15,6 @@ import {
   Alert,
   ActivityIndicator,
   FlatList,
-  Image,
-  Dimensions,
 } from 'react-native';
 import { addDays, format, isToday, isTomorrow } from 'date-fns';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -35,8 +33,8 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { Badge } from '../../components/ui/Badge';
-import { fetchSalonById, toSalonWithMetaFromApi } from '../../services/api/salon.service';
-import { createAppointment, fetchAvailableSlots } from '../../services/api/booking.service';
+import { subscribeToSalon } from '../../services/firebase/salon.service';
+import { createBooking, getBookedSlots } from '../../services/firebase/booking.service';
 import { useAuthStore } from '../../store/authStore';
 import { useBookingStore } from '../../store/bookingStore';
 import { BookingFormSchema, type BookingFormInput } from '../../services/security/validator';
@@ -113,25 +111,22 @@ export function SalonDetailScreen() {
   const [selectedDate, setSelectedDate] = useState(todayDateString());
   const dateOptions = buildDateOptions();
 
-  // Fetch salon data from MongoDB backend
+  // Subscribe to real-time salon data
   useEffect(() => {
-    fetchSalonById(salonId).then(result => {
-      if (result.data) setSalon(toSalonWithMetaFromApi(result.data));
-      setLoading(false);
-    });
+    const unsub = subscribeToSalon(
+      salonId,
+      data => { setSalon(data); setLoading(false); },
+      () => setLoading(false),
+    );
+    return () => unsub();
   }, [salonId]);
 
-  // Reload available slots whenever the selected date or service changes
+  // Reload booked slots whenever the selected date changes
   useEffect(() => {
     setBookedSlots([]);
     setSelectedSlot(null);
-    if (selectedServiceId) {
-      fetchAvailableSlots(salonId, selectedServiceId, selectedDate).then(result => {
-        // availableSlots from API; we invert to get bookedSlots shape
-        setBookedSlots([]); // API returns available, not booked — pass directly to TimeSlotPicker
-      });
-    }
-  }, [salonId, selectedDate, selectedServiceId]);
+    getBookedSlots(salonId, selectedDate).then(setBookedSlots);
+  }, [salonId, selectedDate]);
 
   const {
     control,
@@ -161,36 +156,21 @@ export function SalonDetailScreen() {
     setValue('date', selectedDate);
   }, [selectedDate]);
 
-  // Compute time slots for the selected date's working hours.
-  // - For today, hide slots before now + 30-min lead time.
-  // - When a service is selected, ensure slot + service duration <= close time.
+  // Compute time slots for the selected date's working hours
   const timeSlots = useCallback(() => {
     if (!salon) return [];
     const dateObj = new Date(selectedDate + 'T00:00:00');
     const dayKey = dayKeyFromDate(dateObj) as keyof typeof salon.workingHours;
     const day = salon.workingHours[dayKey];
     if (!day?.isOpen) return [];
-    const isToday = selectedDate === todayDateString();
-    let minTime: string | undefined;
-    if (isToday) {
-      const now = new Date();
-      const lead = new Date(now.getTime() + 30 * 60_000);
-      minTime = `${String(lead.getHours()).padStart(2, '0')}:${String(lead.getMinutes()).padStart(2, '0')}`;
-    }
-    const svc = selectedServiceId ? salon.services.find(s => s.id === selectedServiceId) : null;
-    return getTimeSlots(day.openTime, day.closeTime, 30, minTime, svc?.durationMinutes);
-  }, [salon, selectedDate, selectedServiceId])();
+    return getTimeSlots(day.openTime, day.closeTime, 30);
+  }, [salon, selectedDate])();
 
   async function onSubmit(data: BookingFormInput) {
     if (!salon || !user) return;
     setIsSubmitting(true);
 
-    const result = await createAppointment({
-      salonId: salon.salonId,
-      serviceId: data.serviceId,
-      appointmentDate: data.date,
-      startTime: data.timeSlot,
-    });
+    const result = await createBooking(user.uid, salon, data);
 
     if (result.error) {
       Alert.alert('Booking Failed', result.error);
@@ -199,28 +179,8 @@ export function SalonDetailScreen() {
     }
 
     if (result.data) {
-      // Build a compatible Appointment object for the confirmation screen
-      const confirmed: Appointment = {
-        appointmentId: result.data._id,
-        salonId: salon.salonId,
-        salonName: salon.name,
-        salonAddress: salon.address,
-        salonLatitude: salon.latitude,
-        salonLongitude: salon.longitude,
-        customerId: user.uid,
-        customerName: user.name,
-        customerPhone: user.phone,
-        service: salon.services.find(s => s.id === data.serviceId)?.name ?? 'Service',
-        servicePriceInr: salon.services.find(s => s.id === data.serviceId)?.priceInr ?? 0,
-        serviceDurationMinutes: salon.services.find(s => s.id === data.serviceId)?.durationMinutes ?? 0,
-        timeSlot: data.timeSlot,
-        date: data.date,
-        status: 'confirmed',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      setLastConfirmed(confirmed);
-      navigation.navigate('BookingConfirm', { appointment: confirmed });
+      setLastConfirmed(result.data);
+      navigation.navigate('BookingConfirm', { appointment: result.data });
     }
     setIsSubmitting(false);
   }
@@ -299,26 +259,6 @@ export function SalonDetailScreen() {
             </View>
           </View>
         </LinearGradient>
-
-        {/* ── Photo Gallery ── */}
-        {salon.photos && salon.photos.length > 0 && (
-          <View style={styles.gallerySection}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.galleryScroll}
-              pagingEnabled
-              snapToInterval={GALLERY_W}
-              decelerationRate="fast">
-              {salon.photos.map((uri, i) => (
-                <Image key={`${uri}-${i}`} source={{ uri }} style={styles.galleryImg} resizeMode="cover" />
-              ))}
-            </ScrollView>
-            {salon.photos.length > 1 && (
-              <Text style={styles.galleryCount}>{salon.photos.length} photos · swipe</Text>
-            )}
-          </View>
-        )}
 
         {/* ── Live Status ── */}
         <View style={styles.section}>
@@ -440,27 +380,9 @@ export function SalonDetailScreen() {
   );
 }
 
-const GALLERY_W = Dimensions.get('window').width - Spacing[4] * 2;
-const GALLERY_H = 200;
-
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.background },
   scrollContent: { paddingBottom: Spacing[10] },
-  gallerySection: { marginTop: Spacing[3], marginHorizontal: Spacing[4] },
-  galleryScroll: { gap: Spacing[2] },
-  galleryImg: {
-    width: GALLERY_W,
-    height: GALLERY_H,
-    borderRadius: Radius.xl,
-    backgroundColor: Colors.borderLight,
-  },
-  galleryCount: {
-    textAlign: 'center',
-    marginTop: Spacing[2],
-    fontSize: Typography.xs,
-    color: Colors.textSecondary,
-    fontWeight: Typography.semibold,
-  },
   errorMsg: {
     textAlign: 'center',
     marginTop: Spacing[8],

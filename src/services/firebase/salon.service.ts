@@ -5,6 +5,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   setDoc,
   updateDoc,
@@ -301,11 +302,16 @@ export async function adminCreateSalon(
       address: sanitizeText(salonData.address),
       isVerified: true, // admin-created salons are auto-verified
     };
+    await setDoc(newRef, newSalon);
+
+    // Update city stats
     const statsRef = doc(db, Collections.CITY_STATS, DocIds.CITY_STATS);
-    const batch = writeBatch(db);
-    batch.set(newRef, newSalon);
-    batch.set(statsRef, { totalSalons: increment(1), updatedAt: now }, { merge: true });
-    await batch.commit();
+    const statsSnap = await getDoc(statsRef);
+    if (statsSnap.exists()) {
+      await updateDoc(statsRef, { totalSalons: increment(1), updatedAt: now });
+    } else {
+      await setDoc(statsRef, { totalSalons: 1, openNow: 0, totalSeated: 0, totalWaiting: 0, updatedAt: now });
+    }
 
     return { data: newRef.id };
   } catch (err) {

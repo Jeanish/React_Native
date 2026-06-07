@@ -20,11 +20,12 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { useAuthStore } from '../../store/authStore';
-import { fetchMySalon, upsertMySalon, toSalonWithMetaFromApi, type ApiSalon } from '../../services/api/salon.service';
+import { fetchSalonByOwner, upsertSalon } from '../../services/firebase/salon.service';
 import type { Salon, SalonService, SalonCategory } from '../../types';
 import { sanitizeText, sanitizeName, sanitizePrice, sanitizeDuration, sanitizeSeats } from '../../services/security/sanitizer';
 import { Strings } from '../../constants/strings';
 import { SalonPhotoManager } from '../../components/salon/SalonPhotoManager';
+import { ensureCoords } from '../../services/location/location.service';
 
 function generateId() {
   return Math.random().toString(36).substring(2, 10);
@@ -33,14 +34,8 @@ function generateId() {
 export function SalonSetupScreen() {
   const { user } = useAuthStore();
   const [salon, setSalon] = useState<Partial<Salon>>({});
-  const [apiSalon, setApiSalon] = useState<ApiSalon | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-
-  async function refreshSalon() {
-    const result = await fetchMySalon();
-    if (result.data) setApiSalon(result.data);
-  }
 
   // Form fields
   const [name, setName] = useState('');
@@ -58,19 +53,17 @@ export function SalonSetupScreen() {
   useEffect(() => {
     async function load() {
       if (!user) return;
-      const result = await fetchMySalon();
-      if (result.data) {
-        setApiSalon(result.data);
-        const existing = toSalonWithMetaFromApi(result.data);
-        setSalon(existing as any);
+      const existing = await fetchSalonByOwner(user.uid);
+      if (existing) {
+        setSalon(existing);
         setName(existing.name);
         setAddress(existing.address);
         setPhone(existing.phone);
         setCategory(existing.category);
+        setTotalSeats(String(existing.totalSeats));
         setServices(existing.services);
         setLatitude(String(existing.latitude));
         setLongitude(String(existing.longitude));
-        if ((result.data as any).totalSeats) setTotalSeats(String((result.data as any).totalSeats));
       }
       setLoading(false);
     }
@@ -98,6 +91,18 @@ export function SalonSetupScreen() {
     setServices(prev => prev.filter(s => s.id !== id));
   }
 
+  const [fetchingLocation, setFetchingLocation] = useState(false);
+
+  async function handleUseMyLocation() {
+    setFetchingLocation(true);
+    const coords = await ensureCoords({ offerOpenSettings: true });
+    setFetchingLocation(false);
+    if (!coords) return; // user denied; alert already shown if applicable
+    // Round to 6 decimals (~11 cm precision) for clean display, plenty for routing.
+    setLatitude(coords.latitude.toFixed(6));
+    setLongitude(coords.longitude.toFixed(6));
+  }
+
   async function handleSave() {
     if (!user) return;
 
@@ -111,27 +116,26 @@ export function SalonSetupScreen() {
     }
 
     setSaving(true);
-    const lat = parseFloat(latitude) || 18.5204;
-    const lng = parseFloat(longitude) || 73.8567;
-    const result = await upsertMySalon({
+    const result = await upsertSalon({
+      salonId: salon.salonId,
+      ownerId: user.uid,
       name: sanitizeName(name),
+      address: sanitizeText(address),
       phone: phone.replace(/\D/g, '').substring(0, 10),
-      address: {
-        street: sanitizeText(address),
-        city: 'Pune',
-        state: 'Maharashtra',
-        zipCode: '411001',
-        country: 'India',
-      } as any,
-      location: { type: 'Point', coordinates: [lng, lat] },
-      totalSeats: sanitizeSeats(parseInt(String(totalSeats), 10)),
-    } as any);
+      category,
+      totalSeats: sanitizeSeats(parseInt(totalSeats, 10)),
+      services,
+      latitude: parseFloat(latitude) || 0,
+      longitude: parseFloat(longitude) || 0,
+    });
 
     if (result.error) {
       Alert.alert('Save Failed', result.error);
     } else {
-      if (result.data) setApiSalon(result.data);
       Alert.alert('Saved!', 'Your salon profile has been saved. An admin will verify it shortly.');
+      if (!salon.salonId && result.data) {
+        setSalon(prev => ({ ...prev, salonId: result.data }));
+      }
     }
     setSaving(false);
   }
@@ -237,47 +241,25 @@ export function SalonSetupScreen() {
 
         {/* Location */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Location (GPS Coordinates)</Text>
+          <Text style={styles.cardTitle}>Salon Location</Text>
           <Text style={styles.cardHint}>
-            Go to Google Maps, long-press your salon location, and copy the coordinates shown.
+            Tap the button while standing at your salon, or update later if you move.
           </Text>
-          <View style={styles.coordsRow}>
-            <Input
-              label="Latitude"
-              value={latitude}
-              onChangeText={setLatitude}
-              placeholder="e.g. 12.9716"
-              keyboardType="decimal-pad"
-              containerStyle={styles.coordInput}
-            />
-            <Input
-              label="Longitude"
-              value={longitude}
-              onChangeText={setLongitude}
-              placeholder="e.g. 77.5946"
-              keyboardType="decimal-pad"
-              containerStyle={styles.coordInput}
-            />
-          </View>
-        </View>
-
-        {/* Photos — only after salon exists (needs _id for upload endpoint) */}
-        {apiSalon?._id && (
-          <View style={styles.card}>
-            <SalonPhotoManager
-              salonId={apiSalon._id}
-              images={apiSalon.images ?? []}
-              onChange={refreshSalon}
-            />
-          </View>
-        )}
-        {!apiSalon?._id && (
-          <View style={[styles.card, { alignItems: 'center', padding: Spacing[5] }]}>
-            <Text style={{ fontSize: Typography.sm, color: Colors.textSecondary, textAlign: 'center' }}>
-              📷 Save your salon first, then add photos here.
+          <Button
+            title={fetchingLocation ? 'Detecting…' : '📍 Use my current location'}
+            onPress={handleUseMyLocation}
+            isLoading={fetchingLocation}
+            variant="secondary"
+            fullWidth
+            size="md"
+            style={{ marginBottom: Spacing[3] }}
+          />
+          {(!!latitude && !!longitude) && (
+            <Text style={[styles.cardHint, { marginTop: 0 }]}>
+              Detected: {Number(latitude).toFixed(4)}, {Number(longitude).toFixed(4)} — tap again to refresh.
             </Text>
-          </View>
-        )}
+          )}
+        </View>
 
         {/* Services */}
         <View style={styles.card}>

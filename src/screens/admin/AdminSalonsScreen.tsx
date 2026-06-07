@@ -18,7 +18,11 @@ import LinearGradient from 'react-native-linear-gradient';
 import { Colors, Typography, Spacing, Radius, Shadow } from '../../constants/theme';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { fetchSalons, toSalonWithMetaFromApi } from '../../services/api/salon.service';
+import {
+  subscribeToAllSalonsAdmin,
+  verifySalon,
+  adminDeleteSalon,
+} from '../../services/firebase/salon.service';
 import type { Salon } from '../../types';
 
 type Tab = 'pending' | 'verified' | 'all';
@@ -29,10 +33,11 @@ export function AdminSalonsScreen() {
   const [tab, setTab] = useState<Tab>('pending');
 
   useEffect(() => {
-    fetchSalons({ limit: 100 }).then(result => {
-      if (result.data) setSalons(result.data.map(s => toSalonWithMetaFromApi(s) as any));
-      setLoading(false);
-    });
+    const unsub = subscribeToAllSalonsAdmin(
+      data => { setSalons(data); setLoading(false); },
+      () => setLoading(false),
+    );
+    return () => unsub();
   }, []);
 
   const filtered = salons.filter(s => {
@@ -41,16 +46,40 @@ export function AdminSalonsScreen() {
     return true;
   });
 
-  async function handleVerify(_salon: Salon, _approve: boolean) {
-    Alert.alert('Use Admin Panel', 'Salon approval is managed via the TrimCity Admin Panel (web).');
+  async function handleVerify(salon: Salon, approve: boolean) {
+    Alert.alert(
+      approve ? 'Verify Salon?' : 'Reject Salon?',
+      `${salon.name} — ${salon.address}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: approve ? 'Verify ✓' : 'Reject ✕',
+          style: approve ? 'default' : 'destructive',
+          onPress: async () => {
+            const result = await verifySalon(salon.salonId, approve);
+            if (result.error) Alert.alert('Error', result.error);
+          },
+        },
+      ],
+    );
   }
 
-  async function handleToggleOpen(_salon: Salon) {
-    Alert.alert('Use Admin Panel', 'Salon status is managed via the TrimCity Admin Panel (web).');
-  }
-
-  async function handleDelete(_salon: Salon) {
-    Alert.alert('Use Admin Panel', 'Salon deletion is managed via the TrimCity Admin Panel (web).');
+  async function handleDelete(salon: Salon) {
+    Alert.alert(
+      'Delete Salon?',
+      `This will permanently remove "${salon.name}". This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const result = await adminDeleteSalon(salon.salonId);
+            if (result.error) Alert.alert('Error', result.error);
+          },
+        },
+      ],
+    );
   }
 
   const renderItem = ({ item }: { item: Salon }) => (
@@ -70,7 +99,7 @@ export function AdminSalonsScreen() {
             {item.category.toUpperCase()} · {item.totalSeats} seats · {item.services.length} services
           </Text>
           <Text style={styles.meta}>
-            📞 {item.phone || 'No phone'} · ★ {Number(item.rating).toFixed(1)}
+            📞 {item.phone || 'No phone'} · ★ {item.rating.toFixed(1)}
           </Text>
         </View>
       </View>
@@ -91,14 +120,6 @@ export function AdminSalonsScreen() {
             <Text style={styles.rejectText}>✕ Unverify</Text>
           </TouchableOpacity>
         )}
-        <TouchableOpacity
-          style={[styles.actionBtn, item.isOpen ? styles.closeBtn : styles.openBtn]}
-          onPress={() => handleToggleOpen(item)}
-          activeOpacity={0.8}>
-          <Text style={item.isOpen ? styles.closeBtnText : styles.openBtnText}>
-            {item.isOpen ? '🔒 Close' : '🔓 Open'}
-          </Text>
-        </TouchableOpacity>
         <TouchableOpacity
           style={[styles.actionBtn, styles.deleteBtn]}
           onPress={() => handleDelete(item)}
@@ -228,10 +249,6 @@ const styles = StyleSheet.create({
   verifyText: { color: '#2E7D32', fontSize: Typography.sm, fontWeight: Typography.bold },
   rejectBtn: { backgroundColor: '#FFF3E0' },
   rejectText: { color: '#E65100', fontSize: Typography.sm, fontWeight: Typography.bold },
-  openBtn: { backgroundColor: '#E8F5E9' },
-  openBtnText: { color: Colors.available, fontSize: Typography.sm, fontWeight: Typography.bold },
-  closeBtn: { backgroundColor: '#FFF3E0' },
-  closeBtnText: { color: '#E65100', fontSize: Typography.sm, fontWeight: Typography.bold },
   deleteBtn: { backgroundColor: '#FFEBEE' },
   deleteText: { color: Colors.error, fontSize: Typography.sm, fontWeight: Typography.bold },
 });
