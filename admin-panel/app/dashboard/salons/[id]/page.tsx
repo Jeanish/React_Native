@@ -160,11 +160,19 @@ export default function SalonDetailPage() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<ModalType>(null);
 
+  const load = async () => {
+    try {
+      const res = await dashboardApi.getSalonById(id);
+      setSalon(res.data.data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    dashboardApi.getSalonById(id)
-      .then((res) => setSalon(res.data.data))
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    load();
   }, [id]);
 
   const handleAction = async (reason?: string) => {
@@ -176,9 +184,7 @@ export default function SalonDetailPage() {
 
       toast.success(`Salon ${modal}d successfully`);
       setModal(null);
-      // Refresh
-      const res = await dashboardApi.getSalonById(id);
-      setSalon(res.data.data);
+      await load();
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
       toast.error(msg || `Failed to ${modal} salon`);
