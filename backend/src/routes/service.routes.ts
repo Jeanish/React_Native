@@ -10,16 +10,13 @@ import {
   deleteServiceImage,
 } from '../controllers/service.controller';
 import { authenticate } from '../middleware/auth.middleware';
-import { checkRole } from '../middleware/roleCheck.middleware';
+import { requireSalonAdmin } from '../middleware/roleCheck.middleware';
 import { validate } from '../middleware/validation.middleware';
 import { multerUpload } from '../services/upload.service';
 import Joi from 'joi';
 
 const router = Router();
 
-/**
- * Validation schemas
- */
 const createServiceSchema = Joi.object({
   name: Joi.string().required().min(3).max(100).trim(),
   description: Joi.string().max(1000).trim(),
@@ -54,59 +51,16 @@ const toggleAvailabilitySchema = Joi.object({
   isAvailable: Joi.boolean().required(),
 });
 
-/**
- * Public routes
- */
+// Public routes
 router.get('/salons/:salonId/services', getSalonServices);
 router.get('/:id', getServiceById);
 
-/**
- * Protected routes (Salon Admin)
- */
-router.post(
-  '/salons/:salonId/services',
-  authenticate,
-  checkRole(['salon_admin']),
-  validate(createServiceSchema),
-  createService
-);
-
-router.put(
-  '/:id',
-  authenticate,
-  checkRole(['salon_admin']),
-  validate(updateServiceSchema),
-  updateService
-);
-
-router.delete(
-  '/:id',
-  authenticate,
-  checkRole(['salon_admin']),
-  deleteService
-);
-
-router.patch(
-  '/:id/availability',
-  authenticate,
-  checkRole(['salon_admin']),
-  validate(toggleAvailabilitySchema),
-  toggleServiceAvailability
-);
-
-router.post(
-  '/:id/images',
-  authenticate,
-  checkRole(['salon_admin']),
-  multerUpload.array('images', 5), // Max 5 images
-  uploadServiceImages
-);
-
-router.delete(
-  '/:id/images/:imageId',
-  authenticate,
-  checkRole(['salon_admin']),
-  deleteServiceImage
-);
+// Salon admin routes
+router.post('/salons/:salonId/services', authenticate, requireSalonAdmin, validate({ body: createServiceSchema }), createService);
+router.put('/:id', authenticate, requireSalonAdmin, validate({ body: updateServiceSchema }), updateService);
+router.delete('/:id', authenticate, requireSalonAdmin, deleteService);
+router.patch('/:id/availability', authenticate, requireSalonAdmin, validate({ body: toggleAvailabilitySchema }), toggleServiceAvailability);
+router.post('/:id/images', authenticate, requireSalonAdmin, multerUpload.array('images', 5), uploadServiceImages);
+router.delete('/:id/images/:imageId', authenticate, requireSalonAdmin, deleteServiceImage);
 
 export default router;

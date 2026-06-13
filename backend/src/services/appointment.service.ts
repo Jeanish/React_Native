@@ -2,8 +2,45 @@ import mongoose from 'mongoose';
 import Appointment, { AppointmentStatus, IAppointment } from '../models/Appointment';
 import Service from '../models/Service';
 import Salon from '../models/Salon';
-import User from '../models/User';
+import { User } from '../models/User';
 import { validateAppointmentTime, timeToMinutes, minutesToTime } from './availability.service';
+import { sendToUser } from './notification.service';
+import { logger } from '../utils/logger';
+
+/** Notify both owner and customer that a new booking exists. */
+async function notifyNewAppointment(appt: IAppointment): Promise<void> {
+  const salon = await Salon.findById(appt.salonId).select('ownerId name').lean();
+  if (!salon) return;
+  const customerId = (appt.customerId as any)?._id ?? appt.customerId;
+  const dateStr = new Date(appt.appointmentDate).toLocaleDateString('en-IN');
+  await Promise.all([
+    sendToUser((salon as any).ownerId, {
+      title: 'New booking',
+      body: `${dateStr} · ${appt.startTime} at ${(salon as any).name}`,
+      data: { appointmentId: String(appt._id), type: 'new_booking' },
+    }),
+    sendToUser(customerId, {
+      title: 'Booking received',
+      body: `Your booking at ${(salon as any).name} for ${dateStr} at ${appt.startTime} is pending.`,
+      data: { appointmentId: String(appt._id), type: 'booking_pending' },
+    }),
+  ]);
+}
+
+/** Notify the customer when the salon updates their booking status. */
+async function notifyStatusChange(appt: IAppointment, status: AppointmentStatus): Promise<void> {
+  const customerId = (appt.customerId as any)?._id ?? appt.customerId;
+  const messages: Record<string, { title: string; body: string }> = {
+    [AppointmentStatus.CONFIRMED]: { title: 'Booking confirmed', body: `Your booking at ${appt.startTime} is confirmed.` },
+    [AppointmentStatus.IN_PROGRESS]: { title: 'Your service has started', body: 'Enjoy your service!' },
+    [AppointmentStatus.COMPLETED]: { title: 'All done — thank you!', body: 'Rate your experience in the app.' },
+    [AppointmentStatus.CANCELLED]: { title: 'Booking cancelled', body: 'Your booking was cancelled.' },
+    [AppointmentStatus.NO_SHOW]: { title: 'Marked as no-show', body: 'You missed your booking.' },
+  };
+  const m = messages[status];
+  if (!m) return;
+  await sendToUser(customerId, { ...m, data: { appointmentId: String(appt._id), type: `status_${status}` } });
+}
 
 /**
  * Create appointment data interface
@@ -195,8 +232,10 @@ export const createAppointment = async (
     await appointment.populate('salonId', 'name phone address');
     await appointment.populate('customerId', 'firstName lastName phone email');
 
-    // TODO: Send confirmation notification to customer
-    // TODO: Send new appointment notification to salon
+    // Fire-and-forget push to owner about the new booking, and confirmation to customer.
+    notifyNewAppointment(appointment).catch(err =>
+      logger.warn('notifyNewAppointment failed:', err?.message ?? err),
+    );
 
     return appointment;
   } catch (error) {
@@ -226,7 +265,7 @@ export const getAppointmentById = async (
 
   // Check authorization
   const isCustomer = appointment.customerId._id.toString() === userId;
-  const isSalonOwner = userRole === 'salon_admin' && appointment.salonId.ownerId?.toString() === userId;
+  const isSalonOwner = userRole === 'salon_admin' && (appointment.salonId as unknown as import('../models/Salon').ISalon).ownerId?.toString() === userId;
   const isAdmin = userRole === 'super_admin';
 
   if (!isCustomer && !isSalonOwner && !isAdmin) {
@@ -327,7 +366,7 @@ export const confirmAppointment = async (
     throw new Error('Appointment not found');
   }
 
-  if (appointment.salonId.ownerId?.toString() !== salonOwnerId) {
+  if ((appointment.salonId as unknown as import('../models/Salon').ISalon).ownerId?.toString() !== salonOwnerId) {
     throw new Error('You are not authorized to confirm this appointment');
   }
 
@@ -337,8 +376,9 @@ export const confirmAppointment = async (
 
   appointment.status = AppointmentStatus.CONFIRMED;
   await appointment.save();
-
-  // TODO: Send confirmation notification to customer
+  notifyStatusChange(appointment, AppointmentStatus.CONFIRMED).catch(err =>
+    logger.warn('notifyStatusChange failed:', err?.message ?? err),
+  );
 
   return appointment;
 };
@@ -356,7 +396,7 @@ export const startAppointment = async (
     throw new Error('Appointment not found');
   }
 
-  if (appointment.salonId.ownerId?.toString() !== salonOwnerId) {
+  if ((appointment.salonId as unknown as import('../models/Salon').ISalon).ownerId?.toString() !== salonOwnerId) {
     throw new Error('You are not authorized to start this appointment');
   }
 
@@ -366,6 +406,9 @@ export const startAppointment = async (
 
   appointment.status = AppointmentStatus.IN_PROGRESS;
   await appointment.save();
+  notifyStatusChange(appointment, AppointmentStatus.IN_PROGRESS).catch(err =>
+    logger.warn('notifyStatusChange failed:', err?.message ?? err),
+  );
 
   return appointment;
 };
@@ -384,7 +427,7 @@ export const completeAppointment = async (
     throw new Error('Appointment not found');
   }
 
-  if (appointment.salonId.ownerId?.toString() !== salonOwnerId) {
+  if ((appointment.salonId as unknown as import('../models/Salon').ISalon).ownerId?.toString() !== salonOwnerId) {
     throw new Error('You are not authorized to complete this appointment');
   }
 
@@ -393,6 +436,9 @@ export const completeAppointment = async (
   }
 
   appointment.status = AppointmentStatus.COMPLETED;
+  notifyStatusChange(appointment, AppointmentStatus.COMPLETED).catch(err =>
+    logger.warn('notifyStatusChange failed:', err?.message ?? err),
+  );
   if (salonNotes) {
     appointment.salonNotes = salonNotes;
   }
@@ -421,7 +467,7 @@ export const cancelAppointment = async (
 
   // Check authorization
   const isCustomer = appointment.customerId.toString() === userId;
-  const isSalonOwner = userRole === 'salon_admin' && appointment.salonId.ownerId?.toString() === userId;
+  const isSalonOwner = userRole === 'salon_admin' && (appointment.salonId as unknown as import('../models/Salon').ISalon).ownerId?.toString() === userId;
 
   if (!isCustomer && !isSalonOwner) {
     throw new Error('You are not authorized to cancel this appointment');
@@ -450,6 +496,9 @@ export const cancelAppointment = async (
   }
 
   appointment.status = AppointmentStatus.CANCELLED;
+  notifyStatusChange(appointment, AppointmentStatus.CANCELLED).catch(err =>
+    logger.warn('notifyStatusChange failed:', err?.message ?? err),
+  );
   appointment.cancellationReason = reason;
   appointment.cancelledBy = new mongoose.Types.ObjectId(userId);
   appointment.cancelledAt = new Date();
@@ -589,7 +638,7 @@ export const markAsNoShow = async (
     throw new Error('Appointment not found');
   }
 
-  if (appointment.salonId.ownerId?.toString() !== salonOwnerId) {
+  if ((appointment.salonId as unknown as import('../models/Salon').ISalon).ownerId?.toString() !== salonOwnerId) {
     throw new Error('You are not authorized to update this appointment');
   }
 

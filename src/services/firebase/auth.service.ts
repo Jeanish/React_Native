@@ -22,15 +22,17 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { db, Collections } from './config';
+import { clearAuthTokens } from '../api/client';
 import type { AppUser, UserRole, ServiceResult } from '../../types';
 import { sanitizePhoneNumber } from '../security/sanitizer';
 import { validateIndianPhone } from '../security/validator';
 
 // ─── Dev Bypass ───────────────────────────────────────────────────────────────
-// In development, set DEV_BYPASS = true to skip real OTP entirely.
-// Enter code "DEV999" in the OTP screen to proceed as a mock user.
-const DEV_BYPASS = __DEV__ && false; // ← flip to true to skip real OTP in dev
-const DEV_BYPASS_CODE = '999977';
+// Off by default — set DEV_BYPASS_ENABLED=true to short-circuit real OTP in dev.
+// Strictly gated on __DEV__ so release builds cannot use this path.
+const DEV_BYPASS_ENABLED = false;
+const DEV_BYPASS = __DEV__ && DEV_BYPASS_ENABLED;
+export const DEV_BYPASS_CODE = '999977';
 
 // ─── Module-level confirmation store ─────────────────────────────────────────
 // Firebase ConfirmationResult objects can't be serialised into nav params.
@@ -221,7 +223,18 @@ export async function updateUserProfile(
 
 export async function signOut(): Promise<void> {
   clearPendingConfirmation();
-  await auth().signOut();
+  try {
+    const { teardownPushNotifications } = await import('./notifications.service');
+    await teardownPushNotifications();
+  } catch {
+    // ignore
+  }
+  await clearAuthTokens();
+  try {
+    await auth().signOut();
+  } catch {
+    // Firebase signout can fail if not signed in — ignore
+  }
 }
 
 // ─── Auth State Listener ──────────────────────────────────────────────────────

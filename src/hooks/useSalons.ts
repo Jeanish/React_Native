@@ -1,32 +1,58 @@
 /**
  * TrimCity — useSalons Hook
- * Subscribes to real-time salon data, city stats, and user geolocation.
+ * Fetches salon data from REST API and user geolocation.
  */
 import { useEffect, useRef } from 'react';
-import { PermissionsAndroid, Platform } from 'react-native';
-import Geolocation from '@react-native-community/geolocation';
-import { subscribeToSalons, subscribeToCityStats } from '../services/firebase/salon.service';
+import { fetchSalons, type ApiSalon, salonRating, salonCoords } from '../services/api/salon.service';
+import { ensureCoords } from '../services/location/location.service';
+import type { SalonWithMeta } from '../types';
 import { useSalonStore } from '../store/salonStore';
 
-async function requestLocationPermission(): Promise<boolean> {
-  if (Platform.OS === 'android') {
-    try {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-        {
-          title: 'Location Permission',
-          message: 'TrimCity needs your location to show nearby salons.',
-          buttonNeutral: 'Ask Later',
-          buttonNegative: 'Deny',
-          buttonPositive: 'Allow',
-        },
-      );
-      return granted === PermissionsAndroid.RESULTS.GRANTED;
-    } catch {
-      return false;
-    }
-  }
-  return true; // iOS handled by Info.plist
+function toSalonWithMeta(salon: ApiSalon): SalonWithMeta {
+  const coords = salonCoords(salon);
+  const rating = salonRating(salon);
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+  const todayHours = salon.workingHours?.find(wh => wh.day === dayOfWeek);
+  const isOpenNow = !!(
+    todayHours &&
+    !todayHours.isClosed &&
+    todayHours.openTime <= currentTime &&
+    currentTime <= todayHours.closeTime
+  );
+
+  return {
+    salonId: salon._id,
+    name: salon.name,
+    address: [salon.address?.street, salon.address?.city, salon.address?.state]
+      .filter(Boolean).join(', '),
+    latitude: coords.lat,
+    longitude: coords.lng,
+    category: (salon.category as any) ?? 'unisex',
+    totalSeats: 10,
+    seatedNow: 0,
+    waitingNow: 0,
+    rating,
+    ratingCount: typeof salon.rating === 'object' ? (salon.rating?.count ?? 0) : 0,
+    isOpen: isOpenNow,
+    ownerId: typeof salon.ownerId === 'string' ? salon.ownerId : salon.ownerId?._id ?? '',
+    services: (salon.services ?? []).map(s => ({
+      id: s._id,
+      name: s.name,
+      durationMinutes: s.duration,
+      priceInr: s.price,
+    })),
+    photos: (salon.images ?? []).map((i: any) => (typeof i === 'string' ? i : i.url)),
+    workingHours: {} as any,
+    phone: salon.phone,
+    createdAt: new Date(salon.createdAt).getTime(),
+    updatedAt: new Date(salon.updatedAt).getTime(),
+    isVerified: salon.status === 'approved',
+    availabilityStatus: isOpenNow ? 'available' : 'closed',
+    occupancyPercent: 0,
+  };
 }
 
 export function useSalons() {
@@ -49,37 +75,28 @@ export function useSalons() {
   const locationFetched = useRef(false);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
 
-    const unsubSalons = subscribeToSalons(
-      salons => setSalons(salons),
-      err => setError(err.message),
-    );
+    fetchSalons().then(result => {
+      if (cancelled) return;
+      if (result.data) {
+        setSalons(result.data.map(toSalonWithMeta));
+      } else if (result.error) {
+        setError(result.error);
+      }
+      setLoading(false);
+    });
 
-    const unsubStats = subscribeToCityStats(
-      stats => setCityStats(stats),
-      err => console.warn('[useSalons] stats error:', err.message),
-    );
-
-    // Fetch location once (silent — don't block the UI)
     if (!locationFetched.current) {
       locationFetched.current = true;
-      requestLocationPermission().then(granted => {
-        if (!granted) return;
-        Geolocation.getCurrentPosition(
-          pos => {
-            setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-            console.log('[useSalons] Location acquired:', pos.coords.latitude, pos.coords.longitude);
-          },
-          err => console.warn('[useSalons] Location error:', err.message),
-          { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
-        );
+      ensureCoords().then(coords => {
+        if (coords) setUserLocation({ lat: coords.latitude, lng: coords.longitude });
       });
     }
 
     return () => {
-      unsubSalons();
-      unsubStats();
+      cancelled = true;
     };
   }, []);
 

@@ -14,7 +14,7 @@ export interface TimeSlot {
 /**
  * Convert time string (HH:MM) to minutes since midnight
  */
-const timeToMinutes = (time: string): number => {
+export const timeToMinutes = (time: string): number => {
   const [hours, minutes] = time.split(':').map(Number);
   return hours * 60 + minutes;
 };
@@ -22,7 +22,7 @@ const timeToMinutes = (time: string): number => {
 /**
  * Convert minutes since midnight to time string (HH:MM)
  */
-const minutesToTime = (minutes: number): string => {
+export const minutesToTime = (minutes: number): string => {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
   return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
@@ -141,21 +141,21 @@ const generateTimeSlots = (
 };
 
 /**
- * Mark slots as unavailable if they overlap with existing appointments
+ * A slot is unavailable when the number of overlapping bookings reaches the
+ * salon's chair/seat capacity. With totalSeats=1 this is the original strict mode;
+ * with totalSeats=4 up to 4 concurrent customers can book the same slot.
  */
 const markUnavailableSlots = (
   slots: TimeSlot[],
-  existingAppointments: Array<{ startTime: string; endTime: string }>
+  existingAppointments: Array<{ startTime: string; endTime: string }>,
+  totalSeats: number,
 ): TimeSlot[] => {
+  const capacity = Math.max(1, totalSeats);
   return slots.map((slot) => {
-    const isAvailable = !existingAppointments.some((apt) =>
-      timesOverlap(slot.startTime, slot.endTime, apt.startTime, apt.endTime)
-    );
-
-    return {
-      ...slot,
-      available: isAvailable,
-    };
+    const overlapping = existingAppointments.filter((apt) =>
+      timesOverlap(slot.startTime, slot.endTime, apt.startTime, apt.endTime),
+    ).length;
+    return { ...slot, available: overlapping < capacity };
   });
 };
 
@@ -217,8 +217,10 @@ export const getAvailableTimeSlots = async (
     return []; // Salon is closed on this day
   }
 
-  // Get existing appointments
+  // Get existing appointments + salon capacity
   const existingAppointments = await getExistingAppointments(salonId, date);
+  const salonDoc = await Salon.findById(salonId).select('totalSeats').lean();
+  const totalSeats = (salonDoc as any)?.totalSeats ?? 1;
 
   // Generate all possible time slots
   let slots = generateTimeSlots(
@@ -228,8 +230,8 @@ export const getAvailableTimeSlots = async (
     service.bufferTime
   );
 
-  // Mark unavailable slots
-  slots = markUnavailableSlots(slots, existingAppointments);
+  // Mark unavailable slots based on capacity
+  slots = markUnavailableSlots(slots, existingAppointments, totalSeats);
 
   // Filter out past slots for today
   if (requestedDate.getTime() === today.getTime()) {

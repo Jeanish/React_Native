@@ -20,6 +20,10 @@ import appointmentRoutes from './routes/appointment.routes';
 // Create Express app
 const app: Application = express();
 
+// Trust the first proxy hop so req.ip / X-Forwarded-For work correctly behind
+// ngrok, Cloudflare, or any standard reverse proxy. Required for express-rate-limit.
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet());
 app.use(mongoSanitize());
@@ -85,7 +89,19 @@ app.use(`/api/${env.API_VERSION}/cities`, cityRoutes);
 app.use(`/api/${env.API_VERSION}/services`, serviceRoutes);
 app.use(`/api/${env.API_VERSION}/appointments`, appointmentRoutes);
 app.use(`/api/${env.API_VERSION}/admin`, adminRoutes);
-// TODO: Add remaining routes
+// Public banner endpoint (used by mobile app)
+app.get(`/api/${env.API_VERSION}/banners`, async (req, res, next) => {
+  try {
+    const { getLiveBanners } = await import('./controllers/banner.controller');
+    return getLiveBanners(req, res, next);
+  } catch (e) { next(e); }
+});
+app.post(`/api/${env.API_VERSION}/banners/:id/click`, async (req, res, next) => {
+  try {
+    const { trackBannerClick } = await import('./controllers/banner.controller');
+    return trackBannerClick(req, res, next);
+  } catch (e) { next(e); }
+});
 // app.use(`/api/${env.API_VERSION}/queue`, queueRoutes);
 // app.use(`/api/${env.API_VERSION}/notifications`, notificationRoutes);
 

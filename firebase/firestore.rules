@@ -1,0 +1,148 @@
+// TrimCity — Firestore Security Rules v1.0
+// Defense-in-depth: all writes are validated server-side.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper Functions ─────────────────────────────────────────────────────
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && getUserRole() == 'admin';
+    }
+
+    function isSalonOwner(salonId) {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/salons/$(salonId)).data.ownerId == request.auth.uid;
+    }
+
+    function isValidPhone(phone) {
+      return phone is string && phone.matches('^[6-9][0-9]{9}$');
+    }
+
+    function isValidName(name) {
+      return name is string && name.size() >= 2 && name.size() <= 80;
+    }
+
+    function isNotModifying(fields) {
+      return !(request.resource.data.diff(resource.data).affectedKeys().hasAny(fields));
+    }
+
+    // ── Users Collection ──────────────────────────────────────────────────────
+
+    match /users/{userId} {
+      // Users can read their own document. Admins read all.
+      allow read: if isOwner(userId) || isAdmin();
+
+      // Create: authenticated user creating their own doc on first login
+      allow create: if isOwner(userId)
+        && request.resource.data.uid == userId
+        && isValidPhone(request.resource.data.phone.replace('+91', ''))
+        && request.resource.data.role in ['customer', 'owner'];
+
+      // Update: own fields only, cannot change uid/role (role change = admin action)
+      allow update: if isOwner(userId)
+        && isNotModifying(['uid', 'role', 'phone', 'createdAt']);
+
+      // Admin can update role
+      allow update: if isAdmin();
+
+      allow delete: if false; // never delete users
+    }
+
+    // ── Salons Collection ─────────────────────────────────────────────────────
+
+    match /salons/{salonId} {
+      // Everyone (even unauthenticated) can read verified salons
+      allow read: if resource.data.isVerified == true || isAdmin() ||
+        (isAuthenticated() && resource.data.ownerId == request.auth.uid);
+
+      // Only salon owners can create their salon (one salon per owner enforced in app)
+      allow create: if isAuthenticated()
+        && getUserRole() == 'owner'
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.isVerified == false  // admin must verify
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 2
+        && request.resource.data.totalSeats is int
+        && request.resource.data.totalSeats >= 1
+        && request.resource.data.latitude is number
+        && request.resource.data.longitude is number;
+
+      // Owner can update their own salon (except isVerified — only admin)
+      allow update: if isAuthenticated()
+        && resource.data.ownerId == request.auth.uid
+        && isNotModifying(['ownerId', 'createdAt', 'isVerified', 'salonId']);
+
+      // Admin can update anything (including isVerified)
+      allow update: if isAdmin();
+
+      // Only admin can delete
+      allow delete: if isAdmin();
+    }
+
+    // ── Appointments Collection ───────────────────────────────────────────────
+
+    match /appointments/{appointmentId} {
+      // Customer can read own appointments. Salon owner can read their salon's appointments.
+      allow read: if isAuthenticated() && (
+        resource.data.customerId == request.auth.uid ||
+        isSalonOwner(resource.data.salonId) ||
+        isAdmin()
+      );
+
+      // Customer creates appointment for themselves only
+      allow create: if isAuthenticated()
+        && request.resource.data.customerId == request.auth.uid
+        && request.resource.data.salonId is string
+        && request.resource.data.salonId.size() > 0
+        && isValidName(request.resource.data.customerName)
+        && request.resource.data.status in ['confirmed', 'waiting']
+        && isNotModifying([]);  // new doc, no existing fields
+
+      // Customer can only cancel their own upcoming appointment
+      allow update: if isAuthenticated()
+        && resource.data.customerId == request.auth.uid
+        && request.resource.data.status == 'cancelled'
+        && resource.data.status in ['confirmed', 'waiting']
+        && isNotModifying(['appointmentId', 'salonId', 'customerId', 'createdAt',
+                           'customerName', 'customerPhone', 'service', 'timeSlot', 'date']);
+
+      // Salon owner can update status of their salon's appointments
+      allow update: if isAuthenticated()
+        && isSalonOwner(resource.data.salonId)
+        && request.resource.data.status in ['confirmed', 'completed', 'cancelled', 'waiting']
+        && isNotModifying(['appointmentId', 'salonId', 'customerId', 'createdAt',
+                           'customerName', 'customerPhone', 'service', 'timeSlot', 'date']);
+
+      allow delete: if false; // never hard-delete, only cancel
+    }
+
+    // ── City Stats ────────────────────────────────────────────────────────────
+
+    match /city_stats/{docId} {
+      allow read: if true; // public — everyone sees city stats
+      allow write: if isAdmin(); // only admin/functions update
+    }
+
+    // ── Notifications (server-side only) ──────────────────────────────────────
+
+    match /notifications/{notifId} {
+      allow read: if isAuthenticated()
+        && resource.data.recipientUid == request.auth.uid;
+      allow write: if false; // only Cloud Functions write notifications
+    }
+  }
+}

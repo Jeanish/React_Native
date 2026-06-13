@@ -24,6 +24,8 @@ import { fetchSalonByOwner, upsertSalon } from '../../services/firebase/salon.se
 import type { Salon, SalonService, SalonCategory } from '../../types';
 import { sanitizeText, sanitizeName, sanitizePrice, sanitizeDuration, sanitizeSeats } from '../../services/security/sanitizer';
 import { Strings } from '../../constants/strings';
+import { SalonPhotoManager } from '../../components/salon/SalonPhotoManager';
+import { ensureCoords } from '../../services/location/location.service';
 
 function generateId() {
   return Math.random().toString(36).substring(2, 10);
@@ -87,6 +89,18 @@ export function SalonSetupScreen() {
 
   function handleRemoveService(id: string) {
     setServices(prev => prev.filter(s => s.id !== id));
+  }
+
+  const [fetchingLocation, setFetchingLocation] = useState(false);
+
+  async function handleUseMyLocation() {
+    setFetchingLocation(true);
+    const coords = await ensureCoords({ offerOpenSettings: true });
+    setFetchingLocation(false);
+    if (!coords) return; // user denied; alert already shown if applicable
+    // Round to 6 decimals (~11 cm precision) for clean display, plenty for routing.
+    setLatitude(coords.latitude.toFixed(6));
+    setLongitude(coords.longitude.toFixed(6));
   }
 
   async function handleSave() {
@@ -227,28 +241,24 @@ export function SalonSetupScreen() {
 
         {/* Location */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Location (GPS Coordinates)</Text>
+          <Text style={styles.cardTitle}>Salon Location</Text>
           <Text style={styles.cardHint}>
-            Go to Google Maps, long-press your salon location, and copy the coordinates shown.
+            Tap the button while standing at your salon, or update later if you move.
           </Text>
-          <View style={styles.coordsRow}>
-            <Input
-              label="Latitude"
-              value={latitude}
-              onChangeText={setLatitude}
-              placeholder="e.g. 12.9716"
-              keyboardType="decimal-pad"
-              containerStyle={styles.coordInput}
-            />
-            <Input
-              label="Longitude"
-              value={longitude}
-              onChangeText={setLongitude}
-              placeholder="e.g. 77.5946"
-              keyboardType="decimal-pad"
-              containerStyle={styles.coordInput}
-            />
-          </View>
+          <Button
+            title={fetchingLocation ? 'Detecting…' : '📍 Use my current location'}
+            onPress={handleUseMyLocation}
+            isLoading={fetchingLocation}
+            variant="secondary"
+            fullWidth
+            size="md"
+            style={{ marginBottom: Spacing[3] }}
+          />
+          {(!!latitude && !!longitude) && (
+            <Text style={[styles.cardHint, { marginTop: 0 }]}>
+              Detected: {Number(latitude).toFixed(4)}, {Number(longitude).toFixed(4)} — tap again to refresh.
+            </Text>
+          )}
         </View>
 
         {/* Services */}

@@ -40,24 +40,17 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
  * @route GET /api/v1/cities/:id
  * @access Public
  */
-router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
-
     const city = await City.findOne({ _id: id, isActive: true });
 
     if (!city) {
-      return res.status(404).json({
-        success: false,
-        message: 'City not found',
-      });
+      res.status(404).json({ success: false, message: 'City not found' });
+      return;
     }
 
-    res.status(200).json({
-      success: true,
-      message: 'City retrieved successfully',
-      data: city,
-    });
+    res.status(200).json({ success: true, message: 'City retrieved successfully', data: city });
   } catch (error) {
     next(error);
   }

@@ -208,6 +208,84 @@ export const getCurrentUser = asyncHandler(
   }
 );
 
+/**
+ * Update current user profile
+ * PATCH /api/v1/auth/profile
+ */
+export const updateProfile = asyncHandler(
+  async (req: Request, res: Response): Promise<void> => {
+    const userId = req.user!._id;
+    const { firstName, lastName, fcmToken } = req.body;
+    const set: Record<string, unknown> = {};
+    const unset: Record<string, 1> = {};
+    if (firstName) set.firstName = firstName;
+    if (lastName) set.lastName = lastName;
+    // fcmToken: string sets it; explicit null/'' unsets it (called on logout).
+    if (fcmToken === null || fcmToken === '') unset.fcmToken = 1;
+    else if (typeof fcmToken === 'string') set.fcmToken = fcmToken;
+    const update: any = {};
+    if (Object.keys(set).length) update.$set = set;
+    if (Object.keys(unset).length) update.$unset = unset;
+    const user = await (await import('../models/User')).User.findByIdAndUpdate(
+      userId, update, { new: true }
+    );
+    sendSuccess(res, 'Profile updated', { user });
+  }
+);
+
+/**
+ * Dev-only: login/register by phone number (skips Firebase OTP)
+ * POST /api/v1/auth/dev-phone
+ */
+export const devPhoneLogin = asyncHandler(
+  async (req: Request, res: Response): Promise<void> => {
+    if (!__DEV_MODE__) {
+      res.status(403).json({ success: false, message: 'Not available in production' });
+      return;
+    }
+    const { phone, role } = req.body;
+    if (!phone) { res.status(400).json({ success: false, message: 'phone required' }); return; }
+    const roleMap: Record<string, string> = { owner: 'salon_admin', customer: 'customer' };
+    const mappedRole = roleMap[role] ?? 'customer';
+    // Super admin cannot be created via dev-phone — must use email/password login.
+    if (mappedRole !== 'salon_admin' && mappedRole !== 'customer') {
+      res.status(403).json({ success: false, message: 'Invalid role for dev login' });
+      return;
+    }
+    const { registerCustomer } = await import('../services/auth.service');
+    const bcrypt = await import('bcryptjs');
+    const { user, tokens } = await registerCustomer(phone, undefined, 'Dev', 'User');
+    // Update role if needed — salon_admin requires email + password
+    if (user.role !== mappedRole) {
+      user.role = mappedRole as any;
+      if (mappedRole === 'salon_admin') {
+        if (!user.email) user.email = `dev-${phone}@trimcity.local`;
+        if (!user.password) user.password = await bcrypt.hash('DevPassword@1234', 12);
+      }
+      await user.save();
+    }
+
+    // Self-heal: if this phone has an orphan salon (previous user was wiped),
+    // reassign it to the current user so their data follows them.
+    if (mappedRole === 'salon_admin') {
+      const { default: Salon } = await import('../models/Salon');
+      const ownedByPhone = await Salon.findOne({ phone });
+      if (ownedByPhone && String(ownedByPhone.ownerId) !== String(user._id)) {
+        const existingOwner = await (await import('../models/User')).User.findById(ownedByPhone.ownerId);
+        if (!existingOwner) {
+          // Original owner deleted — take over.
+          ownedByPhone.ownerId = user._id as any;
+          await ownedByPhone.save();
+        }
+      }
+    }
+
+    sendSuccess(res, 'Dev login successful', { user, tokens });
+  }
+);
+
+const __DEV_MODE__ = process.env.NODE_ENV !== 'production';
+
 export default {
   verifyFirebase,
   registerSalon,
@@ -215,4 +293,6 @@ export default {
   refreshToken,
   logoutUser,
   getCurrentUser,
+  updateProfile,
+  devPhoneLogin,
 };

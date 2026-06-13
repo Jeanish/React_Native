@@ -52,7 +52,6 @@ const categorySchema = new Schema<ICategory>(
 );
 
 // Indexes
-categorySchema.index({ slug: 1 });
 categorySchema.index({ isActive: 1 });
 
 // Pre-save hook to generate slug
