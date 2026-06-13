@@ -90,3 +90,6 @@ src/services/firebase/config.ts
 .idea/
 .DS_Store
 Thumbs.db
+
+.next
+.env.*
