@@ -167,13 +167,16 @@ export const getAvailableTimeSlots = async (
   serviceId: string,
   date: Date
 ): Promise<TimeSlot[]> => {
-  // Validate date is not in the past
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const requestedDate = new Date(date);
-  requestedDate.setHours(0, 0, 0, 0);
+  // Helper to format date in IST YYYY-MM-DD
+  const getISTDateString = (d: Date): string => {
+    const dateIST = new Date(d.getTime() + 330 * 60 * 1000); // 330 mins = 5.5 hours
+    return dateIST.toISOString().split('T')[0];
+  };
 
-  if (requestedDate < today) {
+  const todayStr = getISTDateString(new Date());
+  const requestedStr = getISTDateString(new Date(date));
+
+  if (requestedStr < todayStr) {
     throw new Error('Cannot get slots for past dates');
   }
 
@@ -188,26 +191,16 @@ export const getAvailableTimeSlots = async (
     throw new Error('Service does not belong to this salon');
   }
 
-  // Check if date is within advance booking limit
+  // Check if date is within advance booking limit in IST
   const maxDate = new Date();
-  maxDate.setDate(maxDate.getDate() + service.maxAdvanceBookingDays);
+  const maxDateIST = new Date(maxDate.getTime() + 330 * 60 * 1000);
+  maxDateIST.setDate(maxDateIST.getDate() + service.maxAdvanceBookingDays);
+  const maxDateStr = getISTDateString(maxDateIST);
 
-  if (requestedDate > maxDate) {
+  if (requestedStr > maxDateStr) {
     throw new Error(
       `Cannot book more than ${service.maxAdvanceBookingDays} days in advance`
     );
-  }
-
-  // Check if date is at least minimum hours in advance
-  const now = new Date();
-  const minBookingTime = new Date(now.getTime() + service.minAdvanceBookingHours * 60 * 60 * 1000);
-
-  if (requestedDate.getTime() === today.getTime()) {
-    // Same day booking - need to check minimum advance hours
-    const requestedDateTime = new Date(requestedDate);
-    if (requestedDateTime < minBookingTime) {
-      // Filter out slots that are too soon
-    }
   }
 
   // Get salon working hours for this date
@@ -234,16 +227,24 @@ export const getAvailableTimeSlots = async (
   slots = markUnavailableSlots(slots, existingAppointments, totalSeats);
 
   // Filter out past slots for today
-  if (requestedDate.getTime() === today.getTime()) {
-    const currentTime = new Date();
-    const minTime = new Date(currentTime.getTime() + service.minAdvanceBookingHours * 60 * 60 * 1000);
-    const minTimeStr = `${minTime.getHours().toString().padStart(2, '0')}:${minTime.getMinutes().toString().padStart(2, '0')}`;
-    const minTimeMinutes = timeToMinutes(minTimeStr);
+  if (requestedStr === todayStr) {
+    const now = new Date();
+    // Shift current time to IST
+    const nowIST = new Date(now.getTime() + 330 * 60 * 1000);
+    const minTime = new Date(nowIST.getTime() + service.minAdvanceBookingHours * 60 * 60 * 1000);
+    const minTimeDateStr = minTime.toISOString().split('T')[0];
 
-    slots = slots.filter((slot) => {
-      const slotStartMinutes = timeToMinutes(slot.startTime);
-      return slotStartMinutes >= minTimeMinutes;
-    });
+    if (minTimeDateStr > requestedStr) {
+      slots = [];
+    } else {
+      const minTimeStr = `${minTime.getUTCHours().toString().padStart(2, '0')}:${minTime.getUTCMinutes().toString().padStart(2, '0')}`;
+      const minTimeMinutes = timeToMinutes(minTimeStr);
+
+      slots = slots.filter((slot) => {
+        const slotStartMinutes = timeToMinutes(slot.startTime);
+        return slotStartMinutes >= minTimeMinutes;
+      });
+    }
   }
 
   return slots;
@@ -271,6 +272,21 @@ export const isTimeSlotAvailable = async (
 };
 
 /**
+ * Convert an IST date and time string (HH:MM) to a UTC Date object representing that absolute slot time
+ */
+export const getISTSlotDateTime = (date: Date | string, timeStr: string): Date => {
+  const d = new Date(date);
+  const year = d.getUTCFullYear();
+  const month = d.getUTCMonth();
+  const dateVal = d.getUTCDate();
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  
+  // Construct UTC time for the IST hour/min, then subtract 5.5 hours to get the absolute UTC time
+  const utcMillis = Date.UTC(year, month, dateVal, hours, minutes, 0, 0);
+  return new Date(utcMillis - 330 * 60 * 1000); // 330 mins = 5.5 hours
+};
+
+/**
  * Validate appointment time constraints
  */
 export const validateAppointmentTime = async (
@@ -293,9 +309,7 @@ export const validateAppointmentTime = async (
 
     // Check if date is in the past
     const now = new Date();
-    const appointmentDateTime = new Date(date);
-    const [hours, minutes] = startTime.split(':').map(Number);
-    appointmentDateTime.setHours(hours, minutes, 0, 0);
+    const appointmentDateTime = getISTSlotDateTime(date, startTime);
 
     if (appointmentDateTime < now) {
       return { valid: false, error: 'Cannot book appointments in the past' };

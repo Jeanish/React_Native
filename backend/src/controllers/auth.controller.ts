@@ -2,15 +2,20 @@ import { Request, Response } from 'express';
 import { verifyFirebaseToken } from '../config/firebase';
 import {
   registerCustomer,
+  registerCustomerByEmail,
   registerSalonAdmin,
   loginSalonAdmin,
   refreshAccessToken,
   logout,
 } from '../services/auth.service';
+import { createOTP, verifyOTP as verifyOtpService } from '../services/otp.service';
+import { sendOtpSms } from '../services/sms.service';
+import { sendOtpEmail } from '../services/email.service';
 import { sendSuccess, sendError, sendUnauthorized } from '../utils/response';
 import { SUCCESS_MESSAGES, ERROR_MESSAGES } from '../utils/constants';
 import { logger } from '../utils/logger';
 import { asyncHandler } from '../middleware/errorHandler.middleware';
+import { isTempEmail } from '../utils/tempMailBlocker';
 
 /**
  * Verify Firebase ID token and login/register customer
@@ -18,7 +23,7 @@ import { asyncHandler } from '../middleware/errorHandler.middleware';
  */
 export const verifyFirebase = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
-    const { idToken, fcmToken, firstName, lastName } = req.body;
+    const { idToken, fcmToken, firstName, lastName, role } = req.body;
 
     // Verify Firebase token
     let decodedToken;
@@ -29,15 +34,55 @@ export const verifyFirebase = asyncHandler(
       return;
     }
 
+    const email = decodedToken.email;
     const phone = decodedToken.phone_number;
 
-    if (!phone) {
-      sendError(res, 'Phone number not found in Firebase token', 'INVALID_TOKEN', 400);
+    if (!email && !phone) {
+      sendError(res, 'Email or phone number not found in Firebase token', 'INVALID_TOKEN', 400);
       return;
     }
 
-    // Register/login customer
-    const { user, tokens } = await registerCustomer(phone, fcmToken, firstName, lastName);
+    let user, tokens;
+    if (email) {
+      if (isTempEmail(email)) {
+        sendError(res, 'Temporary or disposable email addresses are not allowed', 'TEMP_EMAIL_BLOCKED', 400);
+        return;
+      }
+      const displayName = decodedToken.name || '';
+      const parts = displayName.split(' ');
+      const tokenFirstName = parts[0] || '';
+      const tokenLastName = parts.slice(1).join(' ') || '';
+
+      const regResult = await registerCustomerByEmail(
+        email,
+        fcmToken,
+        firstName || tokenFirstName,
+        lastName || tokenLastName
+      );
+      user = regResult.user;
+      tokens = regResult.tokens;
+    } else {
+      const regResult = await registerCustomer(phone!, fcmToken, firstName, lastName);
+      user = regResult.user;
+      tokens = regResult.tokens;
+    }
+
+    // Apply requested role if provided and different from current role
+    const roleMap: Record<string, string> = { owner: 'salon_admin', customer: 'customer' };
+    const dbRole = roleMap[role] ?? role;
+    if (dbRole && user.role !== dbRole) {
+      user.role = dbRole as any;
+      if (dbRole === 'salon_admin' && !user.email) {
+        user.email = email || `salon-${phone}@trimcity.local`;
+      }
+      await user.save();
+      // Regenerate tokens with updated role
+      const { generateTokenPair } = await import('../utils/jwt');
+      const payload = { userId: user._id.toString(), role: user.role, phone: user.phone, email: user.email };
+      const newTokens = generateTokenPair(payload);
+      tokens.accessToken = newTokens.accessToken;
+      tokens.refreshToken = newTokens.refreshToken;
+    }
 
     logger.info(`Customer logged in successfully: ${user._id}`);
     sendSuccess(
@@ -47,11 +92,89 @@ export const verifyFirebase = asyncHandler(
         user: {
           id: user._id,
           phone: user.phone,
+          email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
           role: user.role,
           avatar: user.avatar,
           isPhoneVerified: user.isPhoneVerified,
+          isEmailVerified: user.isEmailVerified,
+        },
+        tokens,
+      },
+      200
+    );
+  }
+);
+
+/**
+ * Send OTP to email address
+ * POST /api/v1/auth/send-otp
+ */
+export const sendOtp = asyncHandler(
+  async (req: Request, res: Response): Promise<void> => {
+    const { email } = req.body;
+
+    // Additional backend validation to prevent temp email spam bypassing validation middleware
+    if (isTempEmail(email)) {
+      sendError(res, 'Temporary or disposable email addresses are not allowed', 'TEMP_EMAIL_BLOCKED', 400);
+      return;
+    }
+
+    const otpCode = await createOTP(email);
+    await sendOtpEmail(email, otpCode);
+
+    logger.info(`OTP sent to email: ${email}`);
+    sendSuccess(res, 'OTP sent successfully', { email });
+  }
+);
+
+/**
+ * Verify OTP and login/register user
+ * POST /api/v1/auth/verify-otp
+ */
+export const verifyOtp = asyncHandler(
+  async (req: Request, res: Response): Promise<void> => {
+    const { email, otp, role, fcmToken } = req.body;
+
+    const verification = await verifyOtpService(email, otp);
+    if (!verification.isValid) {
+      sendError(res, verification.message, 'INVALID_OTP', 400);
+      return;
+    }
+
+    const { user, tokens } = await registerCustomerByEmail(email, fcmToken);
+
+    const roleMap: Record<string, string> = { owner: 'salon_admin', customer: 'customer' };
+    const dbRole = roleMap[role] ?? role;
+    if (dbRole && user.role !== dbRole) {
+      user.role = dbRole as any;
+      if (dbRole === 'salon_admin' && !user.email) {
+        user.email = email;
+      }
+      await user.save();
+      const { generateTokenPair } = await import('../utils/jwt');
+      const payload = { userId: user._id.toString(), role: user.role, email: user.email, phone: user.phone };
+      const newTokens = generateTokenPair(payload);
+      tokens.accessToken = newTokens.accessToken;
+      tokens.refreshToken = newTokens.refreshToken;
+    }
+
+    logger.info(`User verified via OTP: ${user._id}`);
+    sendSuccess(
+      res,
+      SUCCESS_MESSAGES.LOGIN_SUCCESS,
+      {
+        user: {
+          id: user._id,
+          phone: user.phone,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+          avatar: user.avatar,
+          isPhoneVerified: user.isPhoneVerified,
+          isEmailVerified: user.isEmailVerified,
         },
         tokens,
       },
@@ -234,7 +357,7 @@ export const updateProfile = asyncHandler(
 );
 
 /**
- * Dev-only: login/register by phone number (skips Firebase OTP)
+ * Dev-only: login/register by email or phone number (skips Firebase OTP)
  * POST /api/v1/auth/dev-phone
  */
 export const devPhoneLogin = asyncHandler(
@@ -243,39 +366,49 @@ export const devPhoneLogin = asyncHandler(
       res.status(403).json({ success: false, message: 'Not available in production' });
       return;
     }
-    const { phone, role } = req.body;
-    if (!phone) { res.status(400).json({ success: false, message: 'phone required' }); return; }
+    const { phone, email, role } = req.body;
+    if (!phone && !email) { res.status(400).json({ success: false, message: 'phone or email required' }); return; }
     const roleMap: Record<string, string> = { owner: 'salon_admin', customer: 'customer' };
     const mappedRole = roleMap[role] ?? 'customer';
-    // Super admin cannot be created via dev-phone — must use email/password login.
+    // Super admin cannot be created via dev-phone/dev-email — must use email/password login.
     if (mappedRole !== 'salon_admin' && mappedRole !== 'customer') {
       res.status(403).json({ success: false, message: 'Invalid role for dev login' });
       return;
     }
-    const { registerCustomer } = await import('../services/auth.service');
+    
+    const { registerCustomer, registerCustomerByEmail } = await import('../services/auth.service');
     const bcrypt = await import('bcryptjs');
-    const { user, tokens } = await registerCustomer(phone, undefined, 'Dev', 'User');
+    
+    let result;
+    if (email) {
+      result = await registerCustomerByEmail(email, undefined, 'Dev', 'User');
+    } else {
+      result = await registerCustomer(phone!, undefined, 'Dev', 'User');
+    }
+    const { user, tokens } = result;
+
     // Update role if needed — salon_admin requires email + password
     if (user.role !== mappedRole) {
       user.role = mappedRole as any;
       if (mappedRole === 'salon_admin') {
-        if (!user.email) user.email = `dev-${phone}@trimcity.local`;
+        if (!user.email) user.email = email || `dev-${phone}@trimcity.local`;
         if (!user.password) user.password = await bcrypt.hash('DevPassword@1234', 12);
       }
       await user.save();
     }
 
-    // Self-heal: if this phone has an orphan salon (previous user was wiped),
+    // Self-heal: if this phone or email has an orphan salon (previous user was wiped),
     // reassign it to the current user so their data follows them.
     if (mappedRole === 'salon_admin') {
       const { default: Salon } = await import('../models/Salon');
-      const ownedByPhone = await Salon.findOne({ phone });
-      if (ownedByPhone && String(ownedByPhone.ownerId) !== String(user._id)) {
-        const existingOwner = await (await import('../models/User')).User.findById(ownedByPhone.ownerId);
+      const query = phone ? { phone } : { email };
+      const ownedSalon = await Salon.findOne(query);
+      if (ownedSalon && String(ownedSalon.ownerId) !== String(user._id)) {
+        const existingOwner = await (await import('../models/User')).User.findById(ownedSalon.ownerId);
         if (!existingOwner) {
           // Original owner deleted — take over.
-          ownedByPhone.ownerId = user._id as any;
-          await ownedByPhone.save();
+          ownedSalon.ownerId = user._id as any;
+          await ownedSalon.save();
         }
       }
     }
@@ -288,6 +421,8 @@ const __DEV_MODE__ = process.env.NODE_ENV !== 'production';
 
 export default {
   verifyFirebase,
+  sendOtp,
+  verifyOtp,
   registerSalon,
   loginSalon,
   refreshToken,

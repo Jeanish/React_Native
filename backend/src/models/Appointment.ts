@@ -183,28 +183,28 @@ appointmentSchema.pre('save', async function (next) {
   next();
 });
 
+// Helper to calculate exact UTC Date from stored IST appointment date & start/end time
+function getApptDateTime(appointmentDate: Date, timeStr: string): Date {
+  const d = new Date(appointmentDate);
+  const year = d.getUTCFullYear();
+  const month = d.getUTCMonth();
+  const dateVal = d.getUTCDate();
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  
+  // Construct UTC time for the IST hour/min, then subtract 5.5 hours to get the absolute UTC time
+  const utcMillis = Date.UTC(year, month, dateVal, hours, minutes, 0, 0);
+  return new Date(utcMillis - 330 * 60 * 1000); // 330 mins = 5.5 hours
+}
+
 // Virtual for appointment date-time
 appointmentSchema.virtual('appointmentDateTime').get(function () {
-  const date = new Date(this.appointmentDate);
-  const [hours, minutes] = this.startTime.split(':');
-  date.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-  return date;
+  return getApptDateTime(this.appointmentDate, this.startTime);
 });
 
 // Virtual for end date-time
 appointmentSchema.virtual('endDateTime').get(function () {
-  const date = new Date(this.appointmentDate);
-  const [hours, minutes] = this.endTime.split(':');
-  date.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-  return date;
+  return getApptDateTime(this.appointmentDate, this.endTime);
 });
-
-function getApptDateTime(appointmentDate: Date, startTime: string): Date {
-  const date = new Date(appointmentDate);
-  const [hours, minutes] = startTime.split(':');
-  date.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
-  return date;
-}
 
 // Virtual for is past
 appointmentSchema.virtual('isPast').get(function () {

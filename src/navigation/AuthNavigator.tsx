@@ -8,7 +8,7 @@ import { Colors } from '../constants/theme';
 import type { AuthStackParamList } from '../types';
 
 // Screens (lazy imports for perf)
-import { PhoneScreen } from '../screens/auth/PhoneScreen';
+import { EmailScreen } from '../screens/auth/EmailScreen';
 import { OTPScreen } from '../screens/auth/OTPScreen';
 
 const Stack = createNativeStackNavigator<AuthStackParamList>();
@@ -26,8 +26,8 @@ export function AuthNavigator() {
         statusBarStyle: 'light',
       }}>
       <Stack.Screen
-        name="Phone"
-        component={PhoneScreen}
+        name="Email"
+        component={EmailScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen

@@ -24,7 +24,7 @@ import type { RouteProp } from '@react-navigation/native';
 import { OtpInput } from 'react-native-otp-entry';
 import type { AuthStackParamList } from '../../types';
 import { Colors, Typography, Spacing, Radius, Shadow } from '../../constants/theme';
-import { verifyOTP } from '../../services/firebase/auth.service';
+import { verifyOTP, requestOTP } from '../../services/auth/auth.service';
 import { useAuthStore } from '../../store/authStore';
 import { sanitizeOTP } from '../../services/security/sanitizer';
 import { validateOTP } from '../../services/security/validator';
@@ -40,7 +40,7 @@ const CTA_DISABLED   = ['#BDBDBD', '#9E9E9E'] as const;
 export function OTPScreen() {
   const navigation = useNavigation<NavProp>();
   const route      = useRoute<RoutePropType>();
-  const { phone, verificationId, role } = route.params;
+  const { email, role } = route.params;
 
   const { setUser } = useAuthStore();
 
@@ -48,6 +48,7 @@ export function OTPScreen() {
   const [error, setError]           = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const [resendTimer, setResendTimer] = useState(RESEND_TIMEOUT);
+  const [isResending, setIsResending] = useState(false);
 
   // ── Entrance animations ───────────────────────────────────────────────────
   const heroOpacity  = useRef(new Animated.Value(0)).current;
@@ -128,19 +129,25 @@ export function OTPScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Auto-submit guard (prevents double-verify on rapid input) ─────────────
+  const verifiedRef = useRef(false);
+
   // ── Handlers ──────────────────────────────────────────────────────────────
   async function handleVerify(code?: string) {
+    if (verifiedRef.current) return;
     const otpCode = sanitizeOTP(code ?? otp);
     if (!validateOTP(otpCode)) {
       setError('Please enter a valid 6-digit OTP.');
       return;
     }
+    verifiedRef.current = true;
     setIsVerifying(true);
     setError('');
 
-    const result = await verifyOTP(verificationId, otpCode, role);
+    const result = await verifyOTP(email, otpCode, role);
     if (result.error) {
       setError(result.error);
+      verifiedRef.current = false;
       setIsVerifying(false);
       return;
     }
@@ -148,13 +155,33 @@ export function OTPScreen() {
     setIsVerifying(false);
   }
 
-  function handleResend() {
-    // Going back triggers PhoneScreen → user taps "Get OTP" again → new sendOTP call
-    navigation.goBack();
+  async function handleResend() {
+    setIsResending(true);
+    setError('');
+    try {
+      const result = await requestOTP(email);
+      if (result.error) {
+        setError(result.error);
+      } else {
+        // reset timer
+        if (timerRef.current) clearInterval(timerRef.current);
+        setResendTimer(RESEND_TIMEOUT);
+        setOtp('');
+        verifiedRef.current = false;
+        timerRef.current = setInterval(() => {
+          setResendTimer(prev => {
+            if (prev <= 1) { clearInterval(timerRef.current!); return 0; }
+            return prev - 1;
+          });
+        }, 1000);
+      }
+    } catch {
+      setError('Failed to resend OTP. Please try again.');
+    } finally {
+      setIsResending(false);
+    }
   }
 
-  // Format "+91 98765 43210"
-  const formattedPhone = `+91 ${phone.substring(0, 5)} ${phone.substring(5)}`;
   const canSubmit = otp.length === 6 && !isVerifying;
 
   return (
@@ -171,7 +198,7 @@ export function OTPScreen() {
 
           {/* Custom back */}
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
-            <Text style={styles.backText}>← Change number</Text>
+            <Text style={styles.backText}>← Change email</Text>
           </TouchableOpacity>
 
           {/* Pulsing icon */}
@@ -179,13 +206,13 @@ export function OTPScreen() {
             <Animated.View style={[styles.ring, { transform: [{ scale: ring1Scale }], opacity: ring1Opacity }]} />
             <Animated.View style={[styles.ring, styles.ring2, { transform: [{ scale: ring2Scale }], opacity: ring2Opacity }]} />
             <Animated.View style={[styles.iconCircle, { transform: [{ scale: iconScale }] }]}>
-              <Text style={styles.iconEmoji}>📱</Text>
+              <Text style={styles.iconEmoji}>✉️</Text>
             </Animated.View>
           </View>
 
           <Text style={styles.heroTitle}>OTP Sent!</Text>
           <Text style={styles.heroSub}>
-            Sent to <Text style={styles.phoneBold}>{formattedPhone}</Text>
+            Sent to <Text style={styles.phoneBold}>{email}</Text>
           </Text>
         </Animated.View>
       </SafeAreaView>
@@ -201,7 +228,7 @@ export function OTPScreen() {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}>
 
-            <Text style={styles.cardTitle}>Verify your number</Text>
+            <Text style={styles.cardTitle}>Verify your email</Text>
             <Text style={styles.cardSubtitle}>Enter the 6-digit code below</Text>
 
             {/* ── OTP Boxes ───────────────────────────────────────────── */}
@@ -249,9 +276,13 @@ export function OTPScreen() {
             {/* ── Resend ──────────────────────────────────────────────── */}
             <View style={styles.resendRow}>
               <Text style={styles.resendPrefix}>Didn't receive it?  </Text>
-              {resendTimer > 0 ? (
+              {resendTimer > 0 || isResending ? (
                 <View style={styles.timerChip}>
-                  <Text style={styles.timerText}>Resend in {resendTimer}s</Text>
+                  {isResending ? (
+                    <ActivityIndicator size="small" color={Colors.textSecondary} />
+                  ) : (
+                    <Text style={styles.timerText}>Resend in {resendTimer}s</Text>
+                  )}
                 </View>
               ) : (
                 <TouchableOpacity onPress={handleResend} activeOpacity={0.8}>

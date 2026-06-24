@@ -12,7 +12,7 @@ async function notifyNewAppointment(appt: IAppointment): Promise<void> {
   const salon = await Salon.findById(appt.salonId).select('ownerId name').lean();
   if (!salon) return;
   const customerId = (appt.customerId as any)?._id ?? appt.customerId;
-  const dateStr = new Date(appt.appointmentDate).toLocaleDateString('en-IN');
+  const dateStr = new Date(appt.appointmentDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' });
   await Promise.all([
     sendToUser((salon as any).ownerId, {
       title: 'New booking',
@@ -137,12 +137,17 @@ export const createAppointment = async (
       throw new Error(validation.error);
     }
 
+    const startOfDay = new Date(appointmentDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(appointmentDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
     // Check for customer conflicts (customer can't have overlapping appointments)
     const customerConflicts = await Appointment.find({
       customerId,
       appointmentDate: {
-        $gte: new Date(appointmentDate.setHours(0, 0, 0, 0)),
-        $lte: new Date(appointmentDate.setHours(23, 59, 59, 999)),
+        $gte: startOfDay,
+        $lte: endOfDay,
       },
       status: {
         $in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS],
@@ -177,8 +182,8 @@ export const createAppointment = async (
     const salonConflicts = await Appointment.find({
       salonId,
       appointmentDate: {
-        $gte: new Date(appointmentDate.setHours(0, 0, 0, 0)),
-        $lte: new Date(appointmentDate.setHours(23, 59, 59, 999)),
+        $gte: startOfDay,
+        $lte: endOfDay,
       },
       status: {
         $in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS],
@@ -484,9 +489,7 @@ export const cancelAppointment = async (
   // Check cancellation policy (24 hours before appointment)
   if (isCustomer) {
     const now = new Date();
-    const appointmentDateTime = new Date(appointment.appointmentDate);
-    const [hours, minutes] = appointment.startTime.split(':').map(Number);
-    appointmentDateTime.setHours(hours, minutes, 0, 0);
+    const appointmentDateTime = appointment.appointmentDateTime;
 
     const hoursDifference = (appointmentDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
 
@@ -537,9 +540,7 @@ export const rescheduleAppointment = async (
 
     // Check if can reschedule (at least 24 hours before current appointment)
     const now = new Date();
-    const currentAppointmentDateTime = new Date(appointment.appointmentDate);
-    const [currentHours, currentMinutes] = appointment.startTime.split(':').map(Number);
-    currentAppointmentDateTime.setHours(currentHours, currentMinutes, 0, 0);
+    const currentAppointmentDateTime = appointment.appointmentDateTime;
 
     const hoursDifference = (currentAppointmentDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
 
@@ -567,13 +568,18 @@ export const rescheduleAppointment = async (
     const endMinutes = startMinutes + appointment.totalDuration;
     const endTime = minutesToTime(endMinutes);
 
+    const startOfDay = new Date(appointmentDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(appointmentDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
     // Check for conflicts at new time
     const conflicts = await Appointment.find({
       _id: { $ne: appointmentId },
       salonId: appointment.salonId,
       appointmentDate: {
-        $gte: new Date(appointmentDate.setHours(0, 0, 0, 0)),
-        $lte: new Date(appointmentDate.setHours(23, 59, 59, 999)),
+        $gte: startOfDay,
+        $lte: endOfDay,
       },
       status: {
         $in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS],
@@ -647,9 +653,7 @@ export const markAsNoShow = async (
   }
 
   // Check if appointment time has passed
-  const appointmentDateTime = new Date(appointment.appointmentDate);
-  const [hours, minutes] = appointment.startTime.split(':').map(Number);
-  appointmentDateTime.setHours(hours, minutes, 0, 0);
+  const appointmentDateTime = appointment.appointmentDateTime;
 
   if (appointmentDateTime > new Date()) {
     throw new Error('Cannot mark future appointment as no-show');

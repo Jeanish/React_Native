@@ -10,6 +10,7 @@ export type UserRole = 'customer' | 'owner' | 'admin';
 export interface AppUser {
   uid: string;
   phone: string;
+  email?: string;
   name: string;
   photoURL?: string;
   role: UserRole;
@@ -152,8 +153,8 @@ export type RootStackParamList = {
 };
 
 export type AuthStackParamList = {
-  Phone: { role?: UserRole };
-  OTP: { phone: string; verificationId: string; role: UserRole };
+  Email: { role?: UserRole };
+  OTP: { email: string; verificationId: string; role: UserRole };
 };
 
 export type CustomerTabParamList = {

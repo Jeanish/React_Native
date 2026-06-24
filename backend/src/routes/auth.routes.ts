@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import {
   verifyFirebase,
+  sendOtp,
+  verifyOtp,
   registerSalon,
   loginSalon,
   refreshToken,
@@ -13,6 +15,8 @@ import { authenticate } from '../middleware/auth.middleware';
 import { validateBody } from '../middleware/validation.middleware';
 import {
   verifyFirebaseSchema,
+  sendOtpSchema,
+  verifyOtpSchema,
   salonRegisterSchema,
   salonLoginSchema,
   refreshTokenSchema,
@@ -31,6 +35,22 @@ router.post(
   authLimiter,
   validateBody(verifyFirebaseSchema),
   verifyFirebase
+);
+
+// Send OTP to phone number (free SMS via backend)
+router.post(
+  '/send-otp',
+  authLimiter,
+  validateBody(sendOtpSchema),
+  sendOtp
+);
+
+// Verify OTP and login/register user
+router.post(
+  '/verify-otp',
+  authLimiter,
+  validateBody(verifyOtpSchema),
+  verifyOtp
 );
 
 /**

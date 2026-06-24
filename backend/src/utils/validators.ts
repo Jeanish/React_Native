@@ -1,5 +1,6 @@
 import Joi from 'joi';
 import { USER_ROLES } from './constants';
+import { isTempEmail } from './tempMailBlocker';
 
 /**
  * Phone number validation schema
@@ -21,9 +22,16 @@ export const emailSchema = Joi.string()
   .lowercase()
   .trim()
   .required()
+  .custom((value, helpers) => {
+    if (isTempEmail(value)) {
+      return helpers.error('any.invalid');
+    }
+    return value;
+  })
   .messages({
     'string.email': 'Please provide a valid email address',
     'any.required': 'Email is required',
+    'any.invalid': 'Temporary or disposable email addresses are not allowed',
   });
 
 /**
@@ -106,6 +114,24 @@ export const verifyFirebaseSchema = Joi.object({
   fcmToken: fcmTokenSchema.optional(),
   firstName: nameSchema.optional(),
   lastName: nameSchema.optional(),
+  role: Joi.string().valid('customer', 'owner').optional(),
+});
+
+/**
+ * Send OTP request validation
+ */
+export const sendOtpSchema = Joi.object({
+  email: emailSchema,
+});
+
+/**
+ * Verify OTP request validation
+ */
+export const verifyOtpSchema = Joi.object({
+  email: emailSchema,
+  otp: otpSchema,
+  role: Joi.string().valid('customer', 'owner').optional(),
+  fcmToken: fcmTokenSchema.optional(),
 });
 
 /**

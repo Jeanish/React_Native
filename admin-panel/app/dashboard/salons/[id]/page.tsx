@@ -415,15 +415,18 @@ export default function SalonDetailPage() {
               <div className="card p-5">
                 <h3 className="font-semibold text-slate-700 text-sm mb-3">Photos ({salon.images.length})</h3>
                 <div className="grid grid-cols-2 gap-2">
-                  {salon.images.slice(0, 4).map((url, i) => (
-                    <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                      <img
-                        src={url}
-                        alt={`Salon photo ${i + 1}`}
-                        className="w-full h-20 object-cover rounded-lg hover:opacity-80 transition-opacity"
-                      />
-                    </a>
-                  ))}
+                  {salon.images.slice(0, 4).map((img, i) => {
+                    const url = typeof img === 'string' ? img : (img && (img as any).url ? (img as any).url : '');
+                    return (
+                      <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                        <img
+                          src={url}
+                          alt={`Salon photo ${i + 1}`}
+                          className="w-full h-20 object-cover rounded-lg hover:opacity-80 transition-opacity"
+                        />
+                      </a>
+                    );
+                  })}
                 </div>
               </div>
             )}

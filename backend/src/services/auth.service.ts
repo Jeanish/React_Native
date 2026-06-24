@@ -83,6 +83,79 @@ export const registerCustomer = async (
 };
 
 /**
+ * Register a new customer via Email OTP / Google Sign-In
+ */
+export const registerCustomerByEmail = async (
+  email: string,
+  fcmToken?: string,
+  firstName?: string,
+  lastName?: string
+): Promise<{ user: IUser; tokens: { accessToken: string; refreshToken: string } }> => {
+  try {
+    const cleanEmail = email.trim().toLowerCase();
+    
+    // Check if user already exists
+    let user = await User.findOne({ email: cleanEmail });
+
+    if (user) {
+      // Update FCM token if provided
+      if (fcmToken) {
+        user.fcmToken = fcmToken;
+      }
+      user.isEmailVerified = true;
+      user.lastLogin = new Date();
+      
+      // Update name if provided and not set yet
+      if (firstName && !user.firstName) user.firstName = firstName;
+      if (lastName && !user.lastName) user.lastName = lastName;
+      
+      await user.save();
+    } else {
+      // Create new user
+      user = await User.create({
+        email: cleanEmail,
+        role: USER_ROLES.CUSTOMER,
+        fcmToken,
+        firstName,
+        lastName,
+        isEmailVerified: true,
+        isActive: true,
+        lastLogin: new Date(),
+      });
+    }
+
+    // Generate tokens
+    const payload: JWTPayload = {
+      userId: user._id.toString(),
+      role: user.role,
+      email: user.email,
+    };
+
+    const tokens = generateTokenPair(payload);
+
+    // Store refresh token
+    const refreshTokenExpiry = new Date();
+    refreshTokenExpiry.setDate(
+      refreshTokenExpiry.getDate() + parseInt(env.JWT_REFRESH_EXPIRES_IN)
+    );
+
+    await RefreshToken.create({
+      token: tokens.refreshToken,
+      userId: user._id,
+      expiresAt: refreshTokenExpiry,
+      isRevoked: false,
+    });
+
+    logger.info(`Customer registered/logged in via email: ${user._id}`);
+
+    return { user, tokens };
+  } catch (error: any) {
+    logger.error('Error registering customer by email:', error);
+    throw new Error(error?.message ?? 'Failed to register customer');
+  }
+};
+
+/**
  * Register a new salon admin
  */
 export const registerSalonAdmin = async (data: {
@@ -369,6 +442,7 @@ export const updateFCMToken = async (
 
 export default {
   registerCustomer,
+  registerCustomerByEmail,
   registerSalonAdmin,
   loginSalonAdmin,
   refreshAccessToken,

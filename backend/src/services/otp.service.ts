@@ -10,12 +10,25 @@ export const generateOTP = (): string => {
 };
 
 /**
+ * Helper to build query based on target type (email or phone)
+ */
+const getTargetQuery = (target: string, extra: Record<string, unknown> = {}) => {
+  const isEmail = target.includes('@');
+  return isEmail 
+    ? { email: target.trim().toLowerCase(), ...extra }
+    : { phone: target.trim(), ...extra };
+};
+
+/**
  * Create and store OTP in database
  */
-export const createOTP = async (phone: string): Promise<string> => {
+export const createOTP = async (target: string): Promise<string> => {
   try {
-    // Delete any existing OTPs for this phone number
-    await OTP.deleteMany({ phone, isVerified: false });
+    const isEmail = target.includes('@');
+    const deleteQuery = getTargetQuery(target, { isVerified: false });
+
+    // Delete any existing OTPs for this target
+    await OTP.deleteMany(deleteQuery);
 
     // Generate new OTP
     const otpCode = generateOTP();
@@ -24,16 +37,24 @@ export const createOTP = async (phone: string): Promise<string> => {
     const expiresAt = new Date();
     expiresAt.setMinutes(expiresAt.getMinutes() + OTP_CONFIG.EXPIRY_MINUTES);
 
-    // Create OTP record
-    await OTP.create({
-      phone,
+    // Create OTP record data
+    const otpData: Record<string, unknown> = {
       otp: otpCode,
       expiresAt,
       attempts: 0,
       isVerified: false,
-    });
+    };
 
-    logger.info(`OTP created for phone: ${phone}`);
+    if (isEmail) {
+      otpData.email = target.trim().toLowerCase();
+    } else {
+      otpData.phone = target.trim();
+    }
+
+    // Create OTP record
+    await OTP.create(otpData);
+
+    logger.info(`OTP created for target: ${target}`);
     return otpCode;
   } catch (error) {
     logger.error('Error creating OTP:', error);
@@ -45,15 +66,14 @@ export const createOTP = async (phone: string): Promise<string> => {
  * Verify OTP
  */
 export const verifyOTP = async (
-  phone: string,
+  target: string,
   otpCode: string
 ): Promise<{ isValid: boolean; message: string }> => {
   try {
-    // Find the most recent OTP for this phone
-    const otpRecord = await OTP.findOne({
-      phone,
-      isVerified: false,
-    }).sort({ createdAt: -1 });
+    const findQuery = getTargetQuery(target, { isVerified: false });
+
+    // Find the most recent OTP for this target
+    const otpRecord = await OTP.findOne(findQuery).sort({ createdAt: -1 });
 
     if (!otpRecord) {
       return {
@@ -94,7 +114,7 @@ export const verifyOTP = async (
     otpRecord.isVerified = true;
     await otpRecord.save();
 
-    logger.info(`OTP verified successfully for phone: ${phone}`);
+    logger.info(`OTP verified successfully for target: ${target}`);
     return {
       isValid: true,
       message: 'OTP verified successfully',
@@ -108,12 +128,10 @@ export const verifyOTP = async (
 /**
  * Check if OTP exists and is valid
  */
-export const isOTPValid = async (phone: string): Promise<boolean> => {
+export const isOTPValid = async (target: string): Promise<boolean> => {
   try {
-    const otpRecord = await OTP.findOne({
-      phone,
-      isVerified: false,
-    }).sort({ createdAt: -1 });
+    const findQuery = getTargetQuery(target, { isVerified: false });
+    const otpRecord = await OTP.findOne(findQuery).sort({ createdAt: -1 });
 
     if (!otpRecord) {
       return false;
@@ -142,20 +160,18 @@ export const cleanupExpiredOTPs = async (): Promise<void> => {
 };
 
 /**
- * Get OTP statistics for a phone number
+ * Get OTP statistics for a target
  */
 export const getOTPStats = async (
-  phone: string
+  target: string
 ): Promise<{
   hasActiveOTP: boolean;
   attemptsRemaining: number;
   expiresAt?: Date;
 }> => {
   try {
-    const otpRecord = await OTP.findOne({
-      phone,
-      isVerified: false,
-    }).sort({ createdAt: -1 });
+    const findQuery = getTargetQuery(target, { isVerified: false });
+    const otpRecord = await OTP.findOne(findQuery).sort({ createdAt: -1 });
 
     if (!otpRecord || otpRecord.isExpired()) {
       return {

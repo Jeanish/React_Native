@@ -19,8 +19,13 @@ const otpSchema = new Schema<IOTP>(
   {
     phone: {
       type: String,
-      required: true,
       trim: true,
+      index: true,
+    },
+    email: {
+      type: String,
+      trim: true,
+      lowercase: true,
       index: true,
     },
     otp: {
@@ -47,9 +52,11 @@ const otpSchema = new Schema<IOTP>(
   }
 );
 
-// Compound index for efficient queries
+// Compound indexes for efficient queries
 otpSchema.index({ phone: 1, expiresAt: 1 });
 otpSchema.index({ phone: 1, isVerified: 1 });
+otpSchema.index({ email: 1, expiresAt: 1 });
+otpSchema.index({ email: 1, isVerified: 1 });
 
 // TTL index to automatically delete expired OTPs
 otpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });

@@ -19,9 +19,14 @@ const envVarsSchema = Joi.object({
   CLOUDINARY_CLOUD_NAME: Joi.string().required(),
   CLOUDINARY_API_KEY: Joi.string().required(),
   CLOUDINARY_API_SECRET: Joi.string().required(),
-  SENDGRID_API_KEY: Joi.string().required(),
-  SENDGRID_FROM_EMAIL: Joi.string().email().required(),
+  SENDGRID_API_KEY: Joi.string().optional(),
+  SENDGRID_FROM_EMAIL: Joi.string().email().optional(),
   SENDGRID_FROM_NAME: Joi.string().default('Salon App'),
+  SMTP_HOST: Joi.string().optional().default('smtp.gmail.com'),
+  SMTP_PORT: Joi.number().optional().default(587),
+  SMTP_USER: Joi.string().optional(),
+  SMTP_PASS: Joi.string().optional(),
+  SMTP_FROM_EMAIL: Joi.string().email().optional(),
   RATE_LIMIT_WINDOW_MS: Joi.number().default(900000),
   RATE_LIMIT_MAX_REQUESTS: Joi.number().default(100),
   CORS_ORIGIN: Joi.string().default('http://localhost:3000'),
@@ -31,6 +36,7 @@ const envVarsSchema = Joi.object({
   ALLOWED_FILE_TYPES: Joi.string().default('image/jpeg,image/png,image/jpg'),
   LOG_LEVEL: Joi.string().valid('error', 'warn', 'info', 'http', 'debug').default('info'),
   DB_ENCRYPTION_KEY: Joi.string().required().description('32-byte base64 string for mongoose-field-encryption'),
+  SMS_API_KEY: Joi.string().optional().description('Fast2SMS API key for OTP SMS (optional in dev — logs to console)'),
 }).unknown();
 
 const { value: envVars, error } = envVarsSchema.prefs({ errors: { label: 'key' } }).validate(process.env);
@@ -57,6 +63,11 @@ export const env = {
   SENDGRID_API_KEY: envVars.SENDGRID_API_KEY,
   SENDGRID_FROM_EMAIL: envVars.SENDGRID_FROM_EMAIL,
   SENDGRID_FROM_NAME: envVars.SENDGRID_FROM_NAME,
+  SMTP_HOST: envVars.SMTP_HOST,
+  SMTP_PORT: envVars.SMTP_PORT,
+  SMTP_USER: envVars.SMTP_USER,
+  SMTP_PASS: envVars.SMTP_PASS,
+  SMTP_FROM_EMAIL: envVars.SMTP_FROM_EMAIL,
   RATE_LIMIT_WINDOW_MS: envVars.RATE_LIMIT_WINDOW_MS,
   RATE_LIMIT_MAX_REQUESTS: envVars.RATE_LIMIT_MAX_REQUESTS,
   CORS_ORIGIN: envVars.CORS_ORIGIN,
@@ -66,6 +77,7 @@ export const env = {
   ALLOWED_FILE_TYPES: envVars.ALLOWED_FILE_TYPES,
   LOG_LEVEL: envVars.LOG_LEVEL,
   DB_ENCRYPTION_KEY: envVars.DB_ENCRYPTION_KEY,
+  SMS_API_KEY: envVars.SMS_API_KEY,
 };
 
 export const isDevelopment = env.NODE_ENV === 'development';

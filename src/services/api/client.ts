@@ -1,10 +1,16 @@
 import axios, { AxiosError, AxiosRequestConfig } from 'axios';
 import { saveTokens, loadTokens, clearTokens } from './storage';
+import { API_BASE_URL as ENV_API_BASE_URL } from '@env';
+import { Platform } from 'react-native';
 
-const DEV_URL = 'https://bcfe-2401-4900-5768-2b6-a9fb-3d65-2c0f-bda2.ngrok-free.app/api/v1';
-const PROD_URL = 'https://api.trimcity.in/api/v1';
+const FALLBACK_DEV_URL = Platform.select({
+  ios: 'http://localhost:5000/api/v1',
+  android: 'http://10.0.2.2:5000/api/v1',
+  default: 'http://localhost:5000/api/v1',
+});
+const PROD_URL = 'https://react-native-n4qn.onrender.com/api/v1';
 
-export const API_BASE_URL = __DEV__ ? DEV_URL : PROD_URL;
+export const API_BASE_URL = ENV_API_BASE_URL || (__DEV__ ? FALLBACK_DEV_URL : PROD_URL);
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
