@@ -2,20 +2,20 @@
  * TrimCity — Salon Detail Screen
  * Shows live status, services, map, and booking form.
  */
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Linking,
   Alert,
   ActivityIndicator,
   FlatList,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { addDays, format, isToday, isTomorrow } from 'date-fns';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
@@ -33,8 +33,8 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { Badge } from '../../components/ui/Badge';
-import { subscribeToSalon } from '../../services/firebase/salon.service';
-import { createBooking, getBookedSlots } from '../../services/firebase/booking.service';
+import { fetchSalonById, toSalonWithMetaFromApi } from '../../services/api/salon.service';
+import { createAppointment, fetchAvailableSlots, toAppointmentFromApi } from '../../services/api/booking.service';
 import { useAuthStore } from '../../store/authStore';
 import { useBookingStore } from '../../store/bookingStore';
 import { BookingFormSchema, type BookingFormInput } from '../../services/security/validator';
@@ -111,22 +111,57 @@ export function SalonDetailScreen() {
   const [selectedDate, setSelectedDate] = useState(todayDateString());
   const dateOptions = buildDateOptions();
 
-  // Subscribe to real-time salon data
+  // Load salon details from REST API
   useEffect(() => {
-    const unsub = subscribeToSalon(
-      salonId,
-      data => { setSalon(data); setLoading(false); },
-      () => setLoading(false),
-    );
-    return () => unsub();
+    let active = true;
+    setLoading(true);
+    fetchSalonById(salonId).then(res => {
+      if (!active) return;
+      if (res.data) {
+        setSalon(toSalonWithMetaFromApi(res.data));
+      } else {
+        setSalon(null);
+      }
+      setLoading(false);
+    }).catch(() => {
+      if (active) {
+        setSalon(null);
+        setLoading(false);
+      }
+    });
+    return () => { active = false; };
   }, [salonId]);
 
-  // Reload booked slots whenever the selected date changes
+  // Compute time slots for the selected date's working hours
+  const timeSlots = useMemo(() => {
+    if (!salon) return [];
+    const dateObj = new Date(selectedDate + 'T00:00:00');
+    const dayKey = dayKeyFromDate(dateObj) as keyof typeof salon.workingHours;
+    const day = salon.workingHours[dayKey];
+    if (!day?.isOpen) return [];
+    return getTimeSlots(day.openTime, day.closeTime, 30);
+  }, [salon, selectedDate]);
+
+  // Reload available/booked slots when date or service changes
   useEffect(() => {
-    setBookedSlots([]);
+    if (!selectedServiceId) {
+      setBookedSlots([]);
+      setSelectedSlot(null);
+      return;
+    }
     setSelectedSlot(null);
-    getBookedSlots(salonId, selectedDate).then(setBookedSlots);
-  }, [salonId, selectedDate]);
+    fetchAvailableSlots(salonId, selectedServiceId, selectedDate).then(res => {
+      if (res.data) {
+        // res.data is a list of available slot startTimes.
+        // Any slot that is in the full timeSlots array but NOT in the available list is booked/unavailable.
+        const available = res.data;
+        const booked = timeSlots.filter(slot => !available.includes(slot));
+        setBookedSlots(booked);
+      } else {
+        setBookedSlots([]);
+      }
+    });
+  }, [salonId, selectedServiceId, selectedDate, timeSlots]);
 
   const {
     control,
@@ -156,21 +191,16 @@ export function SalonDetailScreen() {
     setValue('date', selectedDate);
   }, [selectedDate]);
 
-  // Compute time slots for the selected date's working hours
-  const timeSlots = useCallback(() => {
-    if (!salon) return [];
-    const dateObj = new Date(selectedDate + 'T00:00:00');
-    const dayKey = dayKeyFromDate(dateObj) as keyof typeof salon.workingHours;
-    const day = salon.workingHours[dayKey];
-    if (!day?.isOpen) return [];
-    return getTimeSlots(day.openTime, day.closeTime, 30);
-  }, [salon, selectedDate])();
-
   async function onSubmit(data: BookingFormInput) {
     if (!salon || !user) return;
     setIsSubmitting(true);
 
-    const result = await createBooking(user.uid, salon, data);
+    const result = await createAppointment({
+      salonId: salon.salonId,
+      serviceId: data.serviceId,
+      appointmentDate: data.date,
+      startTime: data.timeSlot,
+    });
 
     if (result.error) {
       Alert.alert('Booking Failed', result.error);
@@ -179,8 +209,9 @@ export function SalonDetailScreen() {
     }
 
     if (result.data) {
-      setLastConfirmed(result.data);
-      navigation.navigate('BookingConfirm', { appointment: result.data });
+      const mappedAppt = toAppointmentFromApi(result.data);
+      setLastConfirmed(mappedAppt);
+      navigation.navigate('BookingConfirm', { appointment: mappedAppt });
     }
     setIsSubmitting(false);
   }

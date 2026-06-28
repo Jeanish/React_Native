@@ -162,15 +162,34 @@ export async function updateAppointmentStatus(
   status: BookingStatus,
 ): Promise<ServiceResult<ApiAppointment>> {
   try {
-    const res = await apiClient.patch(`/appointments/${id}/status`, { status });
+    let res;
+    if (status === 'confirmed') {
+      res = await apiClient.patch(`/appointments/${id}/confirm`);
+    } else if (status === 'in-progress') {
+      res = await apiClient.patch(`/appointments/${id}/start`);
+    } else if (status === 'completed') {
+      res = await apiClient.patch(`/appointments/${id}/complete`, { salonNotes: 'Completed by salon owner' });
+    } else if (status === 'no-show') {
+      res = await apiClient.patch(`/appointments/${id}/no-show`);
+    } else if (status === 'cancelled') {
+      res = await apiClient.patch(`/appointments/${id}/cancel`, { reason: 'Cancelled by salon owner' });
+    } else {
+      throw new Error(`Unsupported status update: ${status}`);
+    }
     return { data: res.data.data };
   } catch (err: any) {
-    console.error('[BookingAPI] updateAppointmentStatus error:', err.message);
+    console.error('[BookingAPI] updateAppointmentStatus error:', err.response?.data ?? err.message);
     return { error: err.response?.data?.message ?? 'Failed to update status.' };
   }
 }
 
 // ─── Get available time slots for a salon+service on a date ──────────────────
+
+export interface ApiTimeSlot {
+  startTime: string;
+  endTime: string;
+  available: boolean;
+}
 
 export async function fetchAvailableSlots(
   salonId: string,
@@ -178,12 +197,56 @@ export async function fetchAvailableSlots(
   date: string,
 ): Promise<ServiceResult<string[]>> {
   try {
-    const res = await apiClient.get(`/appointments/availability/${salonId}`, {
+    const res = await apiClient.get(`/appointments/salons/${salonId}/available-slots`, {
       params: { serviceId, date },
     });
-    return { data: res.data.data?.availableSlots ?? [] };
+    const slots: ApiTimeSlot[] = res.data.data?.slots ?? [];
+    const availableSlots = slots.filter(s => s.available).map(s => s.startTime);
+    return { data: availableSlots };
   } catch (err: any) {
     console.error('[BookingAPI] fetchAvailableSlots error:', err.message);
     return { error: err.response?.data?.message ?? 'Failed to load slots.' };
   }
+}
+
+// ─── Map backend ApiAppointment to frontend Appointment ───────────────────────
+
+export function toAppointmentFromApi(apiAppt: ApiAppointment): import('../../types').Appointment {
+  const salon = typeof apiAppt.salonId === 'string'
+    ? { name: '', address: { street: '', city: '', state: '' }, location: { coordinates: [0, 0] }, phone: '' }
+    : apiAppt.salonId;
+  const customer = typeof apiAppt.customerId === 'string'
+    ? { firstName: '', lastName: '', phone: '' }
+    : apiAppt.customerId;
+  const service = typeof apiAppt.serviceId === 'string'
+    ? { name: 'Service', price: apiAppt.totalAmount, duration: 30 }
+    : apiAppt.serviceId;
+
+  const addrStr = [salon.address?.street, salon.address?.city, salon.address?.state].filter(Boolean).join(', ');
+  const [lng, lat] = salon.location?.coordinates ?? [0, 0];
+
+  // Map state/status
+  let status: import('../../types').AppointmentStatus = 'confirmed';
+  if (apiAppt.status === 'pending') status = 'waiting';
+  else if (apiAppt.status === 'cancelled') status = 'cancelled';
+  else if (apiAppt.status === 'completed') status = 'completed';
+
+  return {
+    appointmentId: apiAppt._id,
+    salonId: typeof apiAppt.salonId === 'string' ? apiAppt.salonId : apiAppt.salonId._id,
+    salonName: salon.name || 'Salon',
+    salonAddress: addrStr || 'Address not available',
+    salonLatitude: lat,
+    salonLongitude: lng,
+    customerId: typeof apiAppt.customerId === 'string' ? apiAppt.customerId : apiAppt.customerId._id,
+    customerName: [customer.firstName, customer.lastName].filter(Boolean).join(' ') || 'Customer',
+    customerPhone: customer.phone || '',
+    service: service.name || 'Service',
+    servicePriceInr: service.price || apiAppt.totalAmount,
+    serviceDurationMinutes: service.duration || 30,
+    timeSlot: apiAppt.startTime,
+    date: apiAppt.appointmentDate.split('T')[0],
+    status,
+    createdAt: new Date(apiAppt.createdAt).getTime(),
+  };
 }

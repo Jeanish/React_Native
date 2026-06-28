@@ -121,18 +121,30 @@ export const verifyFirebaseSchema = Joi.object({
  * Send OTP request validation
  */
 export const sendOtpSchema = Joi.object({
-  email: emailSchema,
-});
+  email: emailSchema.optional(),
+  phone: phoneSchema.optional(),
+})
+  .xor('email', 'phone')
+  .messages({
+    'object.missing': 'Email or phone number is required',
+    'object.xor': 'Provide either email or phone number, not both',
+  });
 
 /**
  * Verify OTP request validation
  */
 export const verifyOtpSchema = Joi.object({
-  email: emailSchema,
+  email: emailSchema.optional(),
+  phone: phoneSchema.optional(),
   otp: otpSchema,
   role: Joi.string().valid('customer', 'owner').optional(),
   fcmToken: fcmTokenSchema.optional(),
-});
+})
+  .xor('email', 'phone')
+  .messages({
+    'object.missing': 'Email or phone number is required',
+    'object.xor': 'Provide either email or phone number, not both',
+  });
 
 /**
  * Salon admin login validation

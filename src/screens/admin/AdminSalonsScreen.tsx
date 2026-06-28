@@ -10,10 +10,10 @@ import {
   FlatList,
   TouchableOpacity,
   Alert,
-  SafeAreaView,
   StatusBar,
   RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { Colors, Typography, Spacing, Radius, Shadow } from '../../constants/theme';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';

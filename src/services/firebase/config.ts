@@ -26,4 +26,9 @@ export const Collections = {
   USERS: 'users',
   SALONS: 'salons',
   APPOINTMENTS: 'appointments',
+  CITY_STATS: 'city_stats',
+} as const;
+
+export const DocIds = {
+  CITY_STATS: 'global',
 } as const;

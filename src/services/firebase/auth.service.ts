@@ -28,13 +28,15 @@ function mapBackendRole(role: string): UserRole {
 }
 
 function mapAppUserFromBackend(u: any): AppUser {
+  const emailName = u.email ? u.email.split('@')[0] : '';
   return {
     uid: u.id,
     phone: u.phone ?? '',
     email: u.email ?? '',
-    name: [u.firstName, u.lastName].filter(Boolean).join(' ') || '',
+    name: [u.firstName, u.lastName].filter(Boolean).join(' ') || emailName || 'Set your name',
     photoURL: u.avatar,
     role: mapBackendRole(u.role),
+    location: u.location,
     createdAt: new Date(u.createdAt).getTime(),
     updatedAt: new Date(u.createdAt).getTime(),
   };
@@ -132,23 +134,33 @@ export async function verifyOTP(
 // ─── Update User Profile ──────────────────────────────────────────────────────
 
 export async function updateUserProfile(
-  uidOrUpdates: string | Partial<Pick<AppUser, 'name' | 'photoURL' | 'fcmToken'>>,
-  maybeUpdates?: Partial<Pick<AppUser, 'name' | 'photoURL' | 'fcmToken'>>,
-): Promise<ServiceResult<void>> {
+  uidOrUpdates: string | Partial<Pick<AppUser, 'name' | 'photoURL' | 'fcmToken' | 'email' | 'phone' | 'location'>>,
+  maybeUpdates?: Partial<Pick<AppUser, 'name' | 'photoURL' | 'fcmToken' | 'email' | 'phone' | 'location'>>,
+): Promise<ServiceResult<AppUser>> {
   try {
     const updates = typeof uidOrUpdates === 'string' ? (maybeUpdates ?? {}) : uidOrUpdates;
     const body: Record<string, unknown> = {};
+    if (updates.email) {
+      body.email = updates.email;
+      // take first part based on email as first name
+      const parts = updates.email.split('@')[0];
+      body.firstName = parts;
+      body.lastName = '';
+    }
     if (updates.name) {
       const parts = updates.name.split(' ');
       body.firstName = parts[0] ?? '';
       body.lastName = parts.slice(1).join(' ') || '';
     }
     if (updates.fcmToken !== undefined) body.fcmToken = updates.fcmToken;
-    await apiClient.patch('/auth/profile', body);
-    return {};
+    if (updates.phone !== undefined) body.phone = updates.phone;
+    if (updates.location !== undefined) body.location = updates.location;
+    const res = await apiClient.patch('/auth/profile', body);
+    const updatedUser = mapAppUserFromBackend(res.data.data.user);
+    return { data: updatedUser };
   } catch (err: any) {
     console.error('[AuthService] updateUserProfile error:', err.response?.data ?? err.message);
-    return { error: 'Failed to update profile.' };
+    return { error: err.response?.data?.message ?? 'Failed to update profile.' };
   }
 }
 

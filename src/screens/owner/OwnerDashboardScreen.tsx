@@ -7,7 +7,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   TouchableOpacity,
@@ -15,6 +14,7 @@ import {
   RefreshControl,
   Switch,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { Colors, Typography, Spacing, Radius, Shadow } from '../../constants/theme';
 import { LiveStatusBox } from '../../components/salon/LiveStatusBox';
@@ -22,8 +22,8 @@ import { LiveIndicator } from '../../components/salon/LiveIndicator';
 import { AppointmentBadge } from '../../components/ui/Badge';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { useAuthStore } from '../../store/authStore';
-import { fetchSalonByOwner, toggleSalonOpen } from '../../services/firebase/salon.service';
-import { subscribeToOwnerAppointments, ownerUpdateAppointmentStatus } from '../../services/firebase/booking.service';
+import { fetchMySalon, setManualClosed, toSalonWithMetaFromApi } from '../../services/api/salon.service';
+import { fetchSalonAppointments, updateAppointmentStatus, toAppointmentFromApi } from '../../services/api/booking.service';
 import type { Appointment, Salon } from '../../types';
 import { todayDateString, formatPrice } from '../../utils/formatters';
 import { Strings } from '../../constants/strings';
@@ -38,45 +38,48 @@ export function OwnerDashboardScreen() {
 
   async function loadSalon() {
     if (!user) return;
-    const s = await fetchSalonByOwner(user.uid);
-    setSalon(s);
+    const res = await fetchMySalon();
+    if (res.data) {
+      const mapped = toSalonWithMetaFromApi(res.data);
+      setSalon(mapped);
+      
+      const today = todayDateString();
+      const apptsRes = await fetchSalonAppointments({ date: today });
+      if (apptsRes.data) {
+        setAppointments(apptsRes.data.map(toAppointmentFromApi));
+      }
+    }
     setLoading(false);
     setRefreshing(false);
   }
 
   useEffect(() => {
     loadSalon();
+
+    // Auto-refresh queue stats every 15 seconds
+    const interval = setInterval(loadSalon, 15000);
+    return () => clearInterval(interval);
   }, [user?.uid]);
 
-  // Real-time appointment subscription for today
-  useEffect(() => {
-    if (!salon) return;
-    const unsub = subscribeToOwnerAppointments(
-      salon.salonId,
-      todayDateString(),
-      appts => setAppointments(appts),
-    );
-    return () => unsub();
-  }, [salon?.salonId]);
-
   async function handleToggleOpen(value: boolean) {
-    if (!salon || !user) return;
+    if (!salon) return;
     setTogglingOpen(true);
-    const result = await toggleSalonOpen(salon.salonId, value);
+    const result = await setManualClosed(salon.salonId, !value);
     if (result.error) {
       Alert.alert('Error', result.error);
     } else {
-      setSalon(prev => prev ? { ...prev, isOpen: value } : prev);
+      setSalon(prev => prev ? { ...prev, isOpen: value } : null);
     }
     setTogglingOpen(false);
   }
 
   async function handleMarkStatus(appt: Appointment, newStatus: 'confirmed' | 'completed' | 'cancelled') {
-    if (!salon || !user) return;
-    const result = await ownerUpdateAppointmentStatus(
-      appt.appointmentId, user.uid, salon.salonId, newStatus,
-    );
-    if (result.error) Alert.alert('Error', result.error);
+    const result = await updateAppointmentStatus(appt.appointmentId, newStatus as any);
+    if (result.error) {
+      Alert.alert('Error', result.error);
+    } else {
+      loadSalon();
+    }
   }
 
   if (loading) return <LoadingSpinner fullScreen message="Loading dashboard…" />;

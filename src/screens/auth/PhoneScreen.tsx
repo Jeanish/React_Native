@@ -29,7 +29,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { AuthStackParamList, UserRole } from '../../types';
 import { Colors, Typography, Spacing, Radius, Shadow } from '../../constants/theme';
 import { Strings } from '../../constants/strings';
-import { sendOTP } from '../../services/firebase/auth.service';
+import { requestOTP } from '../../services/auth/auth.service';
 import { validateIndianPhone } from '../../services/security/validator';
 import { sanitizePhoneNumber } from '../../services/security/sanitizer';
 
@@ -41,9 +41,9 @@ const TOGGLE_INNER_WIDTH = SCREEN_WIDTH - Spacing[5] * 2 - TOGGLE_PADDING * 2;
 const INDICATOR_WIDTH = TOGGLE_INNER_WIDTH / 2;
 
 // ─── Gradient palette ────────────────────────────────────────────────────────
-const HERO_GRADIENT = ['#0D0000', '#5C0000', '#B71C1C', '#D32F2F'] as const;
-const CTA_GRADIENT  = ['#EF5350', '#D32F2F', '#B71C1C'] as const;
-const CTA_DISABLED  = ['#BDBDBD', '#9E9E9E'] as const;
+const HERO_GRADIENT = ['#0D0000', '#5C0000', '#B71C1C', '#D32F2F'];
+const CTA_GRADIENT  = ['#EF5350', '#D32F2F', '#B71C1C'];
+const CTA_DISABLED  = ['#BDBDBD', '#9E9E9E'];
 
 export function PhoneScreen() {
   const navigation = useNavigation<NavProp>();
@@ -120,6 +120,11 @@ export function PhoneScreen() {
   }
 
   async function handleSendOTP() {
+    if (role === 'owner') {
+      navigation.navigate('OwnerAuth');
+      return;
+    }
+
     const cleaned = sanitizePhoneNumber(phone);
     if (!validateIndianPhone(cleaned)) {
       setError(Strings.auth.phoneError);
@@ -128,7 +133,7 @@ export function PhoneScreen() {
     setIsLoading(true);
     setError('');
     try {
-      const result = await sendOTP(cleaned);
+      const result = await requestOTP(cleaned);
       if (result.error) {
         setError(result.error);
         return;

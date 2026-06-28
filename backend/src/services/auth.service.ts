@@ -41,7 +41,8 @@ export const registerCustomer = async (
   phone: string,
   fcmToken?: string,
   firstName?: string,
-  lastName?: string
+  lastName?: string,
+  role: string = USER_ROLES.CUSTOMER
 ): Promise<{ user: IUser; tokens: { accessToken: string; refreshToken: string } }> => {
   try {
     // Check if user already exists
@@ -66,9 +67,10 @@ export const registerCustomer = async (
       await user.save();
     } else {
       // Create new user
+      const targetRole = role === 'salon_admin' || role === USER_ROLES.SALON_ADMIN ? USER_ROLES.SALON_ADMIN : USER_ROLES.CUSTOMER;
       user = await User.create({
         phone,
-        role: USER_ROLES.CUSTOMER,
+        role: targetRole,
         fcmToken,
         firstName,
         lastName,
@@ -98,7 +100,8 @@ export const registerCustomerByEmail = async (
   email: string,
   fcmToken?: string,
   firstName?: string,
-  lastName?: string
+  lastName?: string,
+  role: string = USER_ROLES.CUSTOMER
 ): Promise<{ user: IUser; tokens: { accessToken: string; refreshToken: string } }> => {
   try {
     const cleanEmail = email.trim().toLowerCase();
@@ -121,9 +124,10 @@ export const registerCustomerByEmail = async (
       await user.save();
     } else {
       // Create new user
+      const targetRole = role === 'salon_admin' || role === USER_ROLES.SALON_ADMIN ? USER_ROLES.SALON_ADMIN : USER_ROLES.CUSTOMER;
       user = await User.create({
         email: cleanEmail,
-        role: USER_ROLES.CUSTOMER,
+        role: targetRole,
         fcmToken,
         firstName,
         lastName,

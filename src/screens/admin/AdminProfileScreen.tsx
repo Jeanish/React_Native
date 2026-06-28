@@ -7,11 +7,11 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   Alert,
   ScrollView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { Colors, Typography, Spacing, Radius, Shadow } from '../../constants/theme';
 import { Button } from '../../components/ui/Button';

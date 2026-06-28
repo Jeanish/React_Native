@@ -33,6 +33,7 @@ const serviceSchema = new mongoose.Schema(
     description: { type: String, trim: true },
     price: { type: Number, required: true, min: 0 },
     duration: { type: Number, required: true, min: 15 },
+    categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
     images: { type: Array, default: [] },
     isActive: { type: Boolean, default: true },
     isAvailable: { type: Boolean, default: true },
@@ -79,6 +80,7 @@ const salonSchema = new mongoose.Schema(
     isOpen: { type: Boolean, default: true },
     isVerified: { type: Boolean, default: true },
     category: { type: String, enum: ['men', 'women', 'unisex'], default: 'unisex' },
+    categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
   },
   { timestamps: true }
 );
@@ -128,19 +130,109 @@ const appointmentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+const categorySchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, unique: true, trim: true },
+    slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    description: { type: String, trim: true },
+    icon: { type: String, trim: true },
+    isActive: { type: Boolean, default: true },
+  },
+  { timestamps: true }
+);
+
+const citySchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    state: { type: String, required: true, trim: true },
+    country: { type: String, required: true, default: 'India' },
+    location: {
+      type: { type: String, enum: ['Point'], default: 'Point' },
+      coordinates: { type: [Number], required: true }, // [lng, lat]
+    },
+    isActive: { type: Boolean, default: true },
+  },
+  { timestamps: true }
+);
+
+const bannerSchema = new mongoose.Schema(
+  {
+    title: { type: String, required: true, trim: true, maxlength: 100 },
+    subtitle: { type: String, trim: true, maxlength: 200 },
+    imageUrl: { type: String, required: true },
+    ctaText: { type: String, trim: true, maxlength: 50 },
+    ctaLink: { type: String, trim: true },
+    targetType: {
+      type: String,
+      enum: ['all', 'category', 'city', 'salon'],
+      default: 'all',
+      required: true,
+    },
+    targetId: { type: mongoose.Schema.Types.ObjectId },
+    discountPercent: { type: Number, min: 0, max: 100 },
+    discountCode: { type: String, trim: true, uppercase: true },
+    brandId: { type: mongoose.Schema.Types.ObjectId, ref: 'BrandPartner' },
+    priority: { type: Number, default: 0, min: 0 },
+    startDate: { type: Date, required: true },
+    endDate: { type: Date, required: true },
+    isActive: { type: Boolean, default: true },
+    impressions: { type: Number, default: 0 },
+    clicks: { type: Number, default: 0 },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  },
+  { timestamps: true }
+);
+
+const brandPartnerSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true, maxlength: 100 },
+    logo: { type: String },
+    description: { type: String, trim: true, maxlength: 500 },
+    website: { type: String, trim: true },
+    contactEmail: { type: String, trim: true, lowercase: true },
+    products: [
+      {
+        name: { type: String, required: true, trim: true },
+        description: { type: String, trim: true },
+        imageUrl: { type: String },
+        mrp: { type: Number, required: true, min: 0 },
+        partnerPrice: { type: Number, required: true, min: 0 },
+        customerDiscountPercent: { type: Number, required: true, min: 0, max: 100 },
+        isActive: { type: Boolean, default: true },
+      }
+    ],
+    eligibleCategories: {
+      type: [String],
+      enum: ['men', 'women', 'unisex'],
+      default: ['men', 'women', 'unisex'],
+    },
+    eligibleSalonIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Salon' }],
+    isAllSalonsEligible: { type: Boolean, default: true },
+    commissionPercent: { type: Number, default: 10, min: 0, max: 100 },
+    isActive: { type: Boolean, default: true },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  },
+  { timestamps: true }
+);
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 const User = mongoose.models.User || mongoose.model('User', userSchema);
 const Salon = mongoose.models.Salon || mongoose.model('Salon', salonSchema);
 const Service = mongoose.models.Service || mongoose.model('Service', serviceSchema);
 const Appointment = mongoose.models.Appointment || mongoose.model('Appointment', appointmentSchema);
+const Category = mongoose.models.Category || mongoose.model('Category', categorySchema);
+const City = mongoose.models.City || mongoose.model('City', citySchema);
+const Banner = mongoose.models.Banner || mongoose.model('Banner', bannerSchema);
+const BrandPartner = mongoose.models.BrandPartner || mongoose.model('BrandPartner', brandPartnerSchema);
+
 
 // ─── Working hours helper ─────────────────────────────────────────────────────
-function workingHours(closeSunday = true) {
+function workingHours(_closeSunday = false) {
   return [0, 1, 2, 3, 4, 5, 6].map((day) => ({
     day,
-    openTime: day === 0 && !closeSunday ? '10:00' : '09:00',
-    closeTime: day === 6 ? '20:00' : day === 0 ? '18:00' : '21:00',
-    isClosed: day === 0 && closeSunday,
+    openTime: '00:00',
+    closeTime: '23:59',
+    isClosed: false,
   }));
 }
 
@@ -266,13 +358,17 @@ const SALONS_DATA = [
 // ─── Clear seeded data ────────────────────────────────────────────────────────
 async function clearSeedData(): Promise<void> {
   console.log('\n🗑  Clearing existing seed data…');
-  const [s, sv, a, u] = await Promise.all([
+  const [s, sv, a, u, c, ct, b, bp] = await Promise.all([
     Salon.deleteMany({ isVerified: true }),
     Service.deleteMany({}),
     Appointment.deleteMany({}),
     User.deleteMany({ phone: { $in: ['0000000001', '9810001111', '9810002222', '9810003333', '9876543210', '9823456789', '9765432109', '9834567890', '9712345678'] } }),
+    Category.deleteMany({}),
+    City.deleteMany({}),
+    Banner.deleteMany({}),
+    BrandPartner.deleteMany({}),
   ]);
-  console.log(`   Deleted ${s.deletedCount} salons, ${sv.deletedCount} services, ${a.deletedCount} appointments, ${u.deletedCount} seed users`);
+  console.log(`   Deleted ${s.deletedCount} salons, ${sv.deletedCount} services, ${a.deletedCount} appointments, ${u.deletedCount} seed users, ${c.deletedCount} categories, ${ct.deletedCount} cities, ${b.deletedCount} banners, ${bp.deletedCount} brands`);
 }
 
 function apptNumber(): string {
@@ -376,6 +472,142 @@ async function main(): Promise<void> {
     customerIds.push(c._id as mongoose.Types.ObjectId);
   }
 
+  // 3.1 Seed Categories
+  console.log('\n🏷️  Seeding categories…');
+  const categoryDefs = [
+    { name: 'Haircut & Styling', description: 'Haircuts, styling and coloring services', icon: 'scissors' },
+    { name: 'Spa & Massage', description: 'Relaxing body massages and spa treatments', icon: 'spa' },
+    { name: 'Facial & Skincare', description: 'Deep cleansing facials, peels and skincare', icon: 'face' },
+    { name: 'Nails & Manicure', description: 'Nail polish, manicure and pedicure services', icon: 'hand' },
+    { name: 'Makeup & Bridal', description: 'Professional makeup and bridal packages', icon: 'brush' },
+  ];
+  const seededCategories = [];
+  for (const catDef of categoryDefs) {
+    let cat = await Category.findOne({ name: catDef.name });
+    if (!cat) {
+      // Slug is automatically generated in pre-save if we use actual model, 
+      // but since we are seeding via inline schema, let's generate it manually:
+      const slug = catDef.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      cat = await Category.create({ ...catDef, slug });
+      console.log(`   ✓ category: ${catDef.name}`);
+    } else {
+      console.log(`   – category ${catDef.name} already exists`);
+    }
+    seededCategories.push(cat);
+  }
+
+  // 3.2 Seed Cities
+  console.log('\n🏙️  Seeding cities…');
+  const cityDefs = [
+    { name: 'Pune', state: 'Maharashtra', country: 'India', location: { type: 'Point', coordinates: [73.8567, 18.5204] } },
+    { name: 'Mumbai', state: 'Maharashtra', country: 'India', location: { type: 'Point', coordinates: [72.8777, 19.0760] } },
+    { name: 'Bengaluru', state: 'Karnataka', country: 'India', location: { type: 'Point', coordinates: [77.5946, 12.9716] } },
+    { name: 'Surat', state: 'Gujarat', country: 'India', location: { type: 'Point', coordinates: [72.8311, 21.1702] } },
+    { name: 'Navsari', state: 'Gujarat', country: 'India', location: { type: 'Point', coordinates: [72.9278, 20.9467] } },
+    { name: 'Vapi', state: 'Gujarat', country: 'India', location: { type: 'Point', coordinates: [72.9116, 20.3854] } },
+  ];
+  const seededCities = [];
+  for (const cityDef of cityDefs) {
+    let city = await City.findOne({ name: cityDef.name });
+    if (!city) {
+      city = await City.create(cityDef);
+      console.log(`   ✓ city: ${cityDef.name}`);
+    } else {
+      console.log(`   – city ${cityDef.name} already exists`);
+    }
+    seededCities.push(city);
+  }
+
+  // 3.3 Seed Brand Partners
+  console.log('\n🤝  Seeding brand partners…');
+  const brandDefs = [
+    {
+      name: "L'Oreal Professional",
+      logo: 'https://example.com/loreal-logo.jpg',
+      description: 'Premium hair care and hair color products.',
+      website: 'https://www.lorealprofessional.com',
+      contactEmail: 'partner@loreal.com',
+      eligibleCategories: ['unisex', 'women'],
+      isAllSalonsEligible: true,
+      commissionPercent: 15,
+      products: [
+        { name: "L'Oreal Absolut Repair Shampoo", description: 'Repair expert shampoo', mrp: 1200, partnerPrice: 850, customerDiscountPercent: 10 },
+        { name: "L'Oreal Absolut Repair Masque", description: 'Repair expert masque', mrp: 1500, partnerPrice: 1050, customerDiscountPercent: 10 }
+      ]
+    },
+    {
+      name: 'Schwarzkopf Professional',
+      logo: 'https://example.com/schwarzkopf-logo.jpg',
+      description: 'Professional hair color and styling products.',
+      website: 'https://www.schwarzkopf.com',
+      contactEmail: 'partner@schwarzkopf.com',
+      eligibleCategories: ['men', 'unisex'],
+      isAllSalonsEligible: true,
+      commissionPercent: 12,
+      products: [
+        { name: 'Schwarzkopf OSIS+ Hair Wax', description: 'Strong hold hair styling wax', mrp: 950, partnerPrice: 650, customerDiscountPercent: 15 },
+        { name: 'Schwarzkopf Bonacure Moisture Kick', description: 'Moisturizing shampoo', mrp: 1100, partnerPrice: 780, customerDiscountPercent: 10 }
+      ]
+    }
+  ];
+  const seededBrands = [];
+  for (const bDef of brandDefs) {
+    let brand = await BrandPartner.findOne({ name: bDef.name });
+    if (!brand) {
+      brand = await BrandPartner.create({ ...bDef, createdBy: adminUser._id });
+      console.log(`   ✓ brand: ${bDef.name}`);
+    } else {
+      console.log(`   – brand ${bDef.name} already exists`);
+    }
+    seededBrands.push(brand);
+  }
+
+  // 3.4 Seed Banners
+  console.log('\n✨  Seeding banners…');
+  const bannerStartDate = new Date();
+  bannerStartDate.setDate(bannerStartDate.getDate() - 5);
+  const bannerEndDate = new Date();
+  bannerEndDate.setDate(bannerEndDate.getDate() + 30);
+
+  const bannerDefs = [
+    {
+      title: 'Summer Haircut Festival',
+      subtitle: 'Flat 20% off on all Pune salons!',
+      imageUrl: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=800&q=80',
+      ctaText: 'Explore Salons',
+      ctaLink: '/salons',
+      targetType: 'all',
+      priority: 10,
+      startDate: bannerStartDate,
+      endDate: bannerEndDate,
+      discountPercent: 20,
+      discountCode: 'SUMMER20'
+    },
+    {
+      title: 'Get Glowing Skin',
+      subtitle: 'Pamper yourself with standard facials',
+      imageUrl: 'https://images.unsplash.com/photo-1512290923902-8a9f81dc236c?auto=format&fit=crop&w=800&q=80',
+      ctaText: 'Book Skincare',
+      ctaLink: '/categories/facial-skincare',
+      targetType: 'category',
+      targetId: seededCategories[2]._id, // Skincare category
+      priority: 5,
+      startDate: bannerStartDate,
+      endDate: bannerEndDate,
+      discountPercent: 15,
+      discountCode: 'GLOW15'
+    }
+  ];
+  for (const banDef of bannerDefs) {
+    let banner = await Banner.findOne({ title: banDef.title });
+    if (!banner) {
+      banner = await Banner.create({ ...banDef, createdBy: adminUser._id });
+      console.log(`   ✓ banner: ${banDef.title}`);
+    } else {
+      console.log(`   – banner ${banDef.title} already exists`);
+    }
+  }
+
   // 4. Seed salons + services
   console.log('\n🏪  Seeding salons & services…');
   const salonIds: mongoose.Types.ObjectId[] = [];
@@ -386,15 +618,23 @@ async function main(): Promise<void> {
 
     let salon = await Salon.findOne({ name: def.name });
     const ownerId = ownersBySalonPhone.get(def.phone)!;
+    
+    // Determine category based on salon details
+    let salonCatId = seededCategories[0]._id; // Default to Haircut & Styling
+    if (def.category === 'women' && def.name.includes('Parlour')) {
+      salonCatId = seededCategories[2]._id; // Facial & Skincare
+    } else if (def.name.includes('Touch') || def.name.includes('Studio')) {
+      salonCatId = seededCategories[4]._id; // Makeup & Bridal
+    }
+
     if (!salon) {
-      salon = await Salon.create({ ...salonData, ownerId, status: 'approved' });
+      salon = await Salon.create({ ...salonData, ownerId, categoryId: salonCatId, status: 'approved' });
       console.log(`   ✓ ${def.name}`);
-    } else if (salon.ownerId.toString() !== ownerId.toString()) {
-      salon.ownerId = ownerId;
-      await salon.save();
-      console.log(`   ↻ reassigned owner for ${def.name}`);
     } else {
-      console.log(`   – ${def.name} already exists, skipping`);
+      salon.ownerId = ownerId;
+      salon.categoryId = salonCatId;
+      await salon.save();
+      console.log(`   ↻ updated/verified ${def.name}`);
     }
     salonIds.push(salon._id as mongoose.Types.ObjectId);
 
@@ -402,8 +642,25 @@ async function main(): Promise<void> {
     const svcIds: mongoose.Types.ObjectId[] = [];
     for (const svcDef of serviceDefs) {
       let svc = await Service.findOne({ salonId: salon._id, name: svcDef.name });
+      
+      // Determine service category based on name
+      let svcCatId = seededCategories[0]._id; // Default to Haircut
+      const sName = svcDef.name.toLowerCase();
+      if (sName.includes('massage') || sName.includes('spa')) {
+        svcCatId = seededCategories[1]._id; // Spa
+      } else if (sName.includes('facial') || sName.includes('skin') || sName.includes('threading')) {
+        svcCatId = seededCategories[2]._id; // Facial
+      } else if (sName.includes('nail') || sName.includes('pedicure') || sName.includes('manicure') || sName.includes('wax')) {
+        svcCatId = seededCategories[3]._id; // Nails
+      } else if (sName.includes('makeup') || sName.includes('bridal') || sName.includes('styling')) {
+        svcCatId = seededCategories[4]._id; // Makeup
+      }
+
       if (!svc) {
-        svc = await Service.create({ ...svcDef, salonId: salon._id });
+        svc = await Service.create({ ...svcDef, salonId: salon._id, categoryId: svcCatId });
+      } else {
+        svc.categoryId = svcCatId;
+        await svc.save();
       }
       svcIds.push(svc._id as mongoose.Types.ObjectId);
     }

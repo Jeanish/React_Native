@@ -36,12 +36,16 @@ function mapAppUserFromBackend(u: any): AppUser {
 // ─── Customer: Send OTP ───────────────────────────────────────────────────────
 
 /**
- * Request an OTP to be sent to the given email.
+ * Request an OTP to be sent to the given email address or phone number.
  * Returns an empty success result or an error message.
  */
-export const requestOTP = async (email: string): Promise<APIResult<void>> => {
+export const requestOTP = async (target: string): Promise<APIResult<void>> => {
   try {
-    await apiClient.post('/auth/send-otp', { email });
+    const cleaned = target.trim();
+    const body = cleaned.includes('@')
+      ? { email: cleaned.toLowerCase() }
+      : { phone: cleaned };
+    await apiClient.post('/auth/send-otp', body);
     return {};
   } catch (err: any) {
     return { error: err.response?.data?.message ?? err.message ?? 'Failed to send OTP' };
@@ -51,16 +55,20 @@ export const requestOTP = async (email: string): Promise<APIResult<void>> => {
 // ─── Customer: Verify OTP ─────────────────────────────────────────────────────
 
 /**
- * Verify the OTP for the provided email.
+ * Verify the OTP for the provided email address or phone number.
  * Backend returns: { success, data: { user, tokens: { accessToken, refreshToken } } }
  */
 export const verifyOTP = async (
-  email: string,
+  target: string,
   otp: string,
   role?: UserRole,
 ): Promise<APIResult<AppUser>> => {
   try {
-    const res = await apiClient.post('/auth/verify-otp', { email, otp, role });
+    const cleaned = target.trim();
+    const body = cleaned.includes('@')
+      ? { email: cleaned.toLowerCase(), otp, role }
+      : { phone: cleaned, otp, role };
+    const res = await apiClient.post('/auth/verify-otp', body);
     const { user: u, tokens } = res.data.data;
     await setAuthTokens(tokens.accessToken, tokens.refreshToken);
     const appUser = mapAppUserFromBackend(u);

@@ -24,6 +24,7 @@ import { Colors, Typography, Spacing, Radius, Shadow } from '../../constants/the
 import { Strings } from '../../constants/strings';
 import { requestOTP } from '../../services/auth/auth.service';
 import { useAuthStore } from '../../store/authStore';
+import { API_BASE_URL } from '../../services/api/client';
 
 type NavProp = NativeStackNavigationProp<AuthStackParamList, 'Email'>;
 
@@ -33,9 +34,9 @@ const TOGGLE_INNER_WIDTH = SCREEN_WIDTH - Spacing[5] * 2 - TOGGLE_PADDING * 2;
 const INDICATOR_WIDTH = TOGGLE_INNER_WIDTH / 2;
 
 // ─── Gradient palette ────────────────────────────────────────────────────────
-const HERO_GRADIENT = ['#0D0000', '#5C0000', '#B71C1C', '#D32F2F'] as const;
-const CTA_GRADIENT  = ['#EF5350', '#D32F2F', '#B71C1C'] as const;
-const CTA_DISABLED  = ['#BDBDBD', '#9E9E9E'] as const;
+const HERO_GRADIENT = ['#0D0000', '#5C0000', '#B71C1C', '#D32F2F'];
+const CTA_GRADIENT  = ['#EF5350', '#D32F2F', '#B71C1C'];
+const CTA_DISABLED  = ['#BDBDBD', '#9E9E9E'];
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -299,6 +300,11 @@ export function EmailScreen() {
               <Text style={styles.footerLink}>Terms</Text>
               {' '}&amp;{' '}
               <Text style={styles.footerLink}>Privacy Policy</Text>
+            </Text>
+
+            {/* Debug API Base URL */}
+            <Text style={{ textAlign: 'center', fontSize: 11, color: 'rgba(210, 0, 0, 0.4)', marginTop: 24 }}>
+              Backend: {API_BASE_URL}
             </Text>
 
           </ScrollView>

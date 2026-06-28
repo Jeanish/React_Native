@@ -31,6 +31,7 @@ export const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: false,
+  skip: () => env.NODE_ENV === 'development',
   handler: (req: Request, res: Response) => {
     logger.warn(`Auth rate limit exceeded for IP: ${req.ip}`);
     sendRateLimitError(
@@ -51,6 +52,7 @@ export const otpLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: false,
+  skip: () => env.NODE_ENV === 'development',
   handler: (req: Request, res: Response) => {
     logger.warn(`OTP rate limit exceeded for IP: ${req.ip}`);
     sendRateLimitError(

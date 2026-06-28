@@ -10,11 +10,14 @@ import {
 } from '../services/auth.service';
 import { createOTP, verifyOTP as verifyOtpService } from '../services/otp.service';
 import { sendOtpEmail } from '../services/email.service';
+import { sendOtpSms } from '../services/sms.service';
 import { sendSuccess, sendError, sendUnauthorized } from '../utils/response';
 import { SUCCESS_MESSAGES, ERROR_MESSAGES } from '../utils/constants';
 import { logger } from '../utils/logger';
 import { asyncHandler } from '../middleware/errorHandler.middleware';
 import { isTempEmail } from '../utils/tempMailBlocker';
+
+const normalizePhone = (value: string): string => value.replace(/\D/g, '').slice(-10);
 
 /**
  * Verify Firebase ID token and login/register customer
@@ -95,19 +98,24 @@ export const verifyFirebase = asyncHandler(
  */
 export const sendOtp = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
-    const { email } = req.body;
+    const { email, phone } = req.body;
+    const target = email || normalizePhone(phone);
 
     // Additional backend validation to prevent temp email spam bypassing validation middleware
-    if (isTempEmail(email)) {
+    if (email && isTempEmail(email)) {
       sendError(res, 'Temporary or disposable email addresses are not allowed', 'TEMP_EMAIL_BLOCKED', 400);
       return;
     }
 
-    const otpCode = await createOTP(email);
-    await sendOtpEmail(email, otpCode);
+    const otpCode = await createOTP(target);
+    if (email) {
+      await sendOtpEmail(email, otpCode);
+    } else {
+      await sendOtpSms(target, otpCode);
+    }
 
-    logger.info(`OTP sent to email: ${email}`);
-    sendSuccess(res, 'OTP sent successfully', { email });
+    logger.info(`OTP sent to ${email ? 'email' : 'phone'}: ${target}`);
+    sendSuccess(res, 'OTP sent successfully', email ? { email } : { phone });
   }
 );
 
@@ -117,15 +125,18 @@ export const sendOtp = asyncHandler(
  */
 export const verifyOtp = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
-    const { email, otp, fcmToken } = req.body;
+    const { email, phone, otp, fcmToken, role } = req.body;
+    const target = email || normalizePhone(phone);
 
-    const verification = await verifyOtpService(email, otp);
+    const verification = await verifyOtpService(target, otp);
     if (!verification.isValid) {
       sendError(res, verification.message, 'INVALID_OTP', 400);
       return;
     }
 
-    const { user, tokens } = await registerCustomerByEmail(email, fcmToken);
+    const { user, tokens } = email
+      ? await registerCustomerByEmail(email, fcmToken, undefined, undefined, role)
+      : await registerCustomer(target, fcmToken, undefined, undefined, role);
 
     logger.info(`User verified via OTP: ${user._id}`);
     sendSuccess(
@@ -288,6 +299,7 @@ export const getCurrentUser = asyncHandler(
         role: user.role,
         avatar: user.avatar,
         salonId: user.salonId,
+        location: user.location,
         isEmailVerified: user.isEmailVerified,
         isPhoneVerified: user.isPhoneVerified,
         isActive: user.isActive,
@@ -305,11 +317,30 @@ export const getCurrentUser = asyncHandler(
 export const updateProfile = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!._id;
-    const { firstName, lastName, fcmToken } = req.body;
+    const { firstName, lastName, fcmToken, email, phone, location } = req.body;
+
+    if (location && typeof location === 'string' && location.trim() !== '') {
+      const { default: City } = await import('../models/City');
+      const activeCity = await City.findOne({
+        name: { $regex: new RegExp(`^${location.trim()}$`, 'i') },
+        isActive: true
+      });
+      if (!activeCity) {
+        res.status(400).json({
+          success: false,
+          message: 'Sorry we are not available in your city. Kindly contact support for more information or for franchise.'
+        });
+        return;
+      }
+    }
+
     const set: Record<string, unknown> = {};
     const unset: Record<string, 1> = {};
-    if (firstName) set.firstName = firstName;
-    if (lastName) set.lastName = lastName;
+    if (firstName !== undefined) set.firstName = firstName;
+    if (lastName !== undefined) set.lastName = lastName;
+    if (email !== undefined) set.email = email;
+    if (phone !== undefined) set.phone = phone;
+    if (location !== undefined) set.location = location;
     // fcmToken: string sets it; explicit null/'' unsets it (called on logout).
     if (fcmToken === null || fcmToken === '') unset.fcmToken = 1;
     else if (typeof fcmToken === 'string') set.fcmToken = fcmToken;

@@ -3,7 +3,7 @@
  * Real-time subscription to the current customer's appointments.
  */
 import { useEffect } from 'react';
-import { subscribeToCustomerAppointments } from '../services/firebase/booking.service';
+import { fetchMyAppointments, toAppointmentFromApi } from '../services/api/booking.service';
 import { useBookingStore } from '../store/bookingStore';
 import { useAuthStore } from '../store/authStore';
 
@@ -23,14 +23,28 @@ export function useBookings() {
   useEffect(() => {
     if (!user?.uid) return;
 
+    let active = true;
     setLoading(true);
-    const unsub = subscribeToCustomerAppointments(
-      user.uid,
-      appts => setAppointments(appts),
-      err => setError(err.message),
-    );
+    fetchMyAppointments()
+      .then(res => {
+        if (!active) return;
+        if (res.data) {
+          setAppointments(res.data.map(toAppointmentFromApi));
+        } else if (res.error) {
+          setError(res.error);
+        }
+        setLoading(false);
+      })
+      .catch(err => {
+        if (active) {
+          setError(err.message);
+          setLoading(false);
+        }
+      });
 
-    return () => unsub();
+    return () => {
+      active = false;
+    };
   }, [user?.uid]);
 
   return {

@@ -1,4 +1,4 @@
-/**
+/**
  * TrimCity — Core TypeScript Types
  * Single source of truth for all data models.
  */
@@ -15,6 +15,7 @@ export interface AppUser {
   photoURL?: string;
   role: UserRole;
   fcmToken?: string;
+  location?: string;
   createdAt: number; // Unix ms
   updatedAt: number;
 }
@@ -154,7 +155,8 @@ export type RootStackParamList = {
 
 export type AuthStackParamList = {
   Email: { role?: UserRole };
-  OTP: { email: string; verificationId: string; role: UserRole };
+  Phone: { role?: UserRole };
+  OTP: { email?: string; phone?: string; verificationId: string; role: UserRole };
   OwnerAuth: undefined;
 };
 

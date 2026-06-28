@@ -7,25 +7,26 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   TouchableOpacity,
   Alert,
   TextInput,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { Colors, Typography, Spacing, Radius, Shadow } from '../../constants/theme';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { useAuthStore } from '../../store/authStore';
-import { fetchSalonByOwner, upsertSalon } from '../../services/firebase/salon.service';
+import { fetchMySalon, upsertMySalon } from '../../services/api/salon.service';
 import type { Salon, SalonService, SalonCategory } from '../../types';
 import { sanitizeText, sanitizeName, sanitizePrice, sanitizeDuration, sanitizeSeats } from '../../services/security/sanitizer';
 import { Strings } from '../../constants/strings';
 import { SalonPhotoManager } from '../../components/salon/SalonPhotoManager';
 import { ensureCoords } from '../../services/location/location.service';
+import apiClient from '../../services/api/client';
 
 function generateId() {
   return Math.random().toString(36).substring(2, 10);
@@ -39,7 +40,10 @@ export function SalonSetupScreen() {
 
   // Form fields
   const [name, setName] = useState('');
-  const [address, setAddress] = useState('');
+  const [street, setStreet] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [zipCode, setZipCode] = useState('');
   const [phone, setPhone] = useState('');
   const [category, setCategory] = useState<SalonCategory>('unisex');
   const [totalSeats, setTotalSeats] = useState('4');
@@ -53,17 +57,39 @@ export function SalonSetupScreen() {
   useEffect(() => {
     async function load() {
       if (!user) return;
-      const existing = await fetchSalonByOwner(user.uid);
-      if (existing) {
-        setSalon(existing);
+      const res = await fetchMySalon();
+      if (res.data) {
+        const existing = res.data;
+        setSalon({
+          salonId: existing._id,
+          name: existing.name,
+          phone: existing.phone,
+          category: existing.category as any,
+          totalSeats: existing.totalSeats,
+          address: [existing.address?.street, existing.address?.city, existing.address?.state].filter(Boolean).join(', '),
+          latitude: existing.location?.coordinates?.[1] ?? 0,
+          longitude: existing.location?.coordinates?.[0] ?? 0,
+        });
         setName(existing.name);
-        setAddress(existing.address);
+        setStreet(existing.address?.street ?? '');
+        setCity(existing.address?.city ?? '');
+        setState(existing.address?.state ?? '');
+        setZipCode(existing.address?.zipCode ?? '');
         setPhone(existing.phone);
-        setCategory(existing.category);
-        setTotalSeats(String(existing.totalSeats));
-        setServices(existing.services);
-        setLatitude(String(existing.latitude));
-        setLongitude(String(existing.longitude));
+        setCategory(existing.category as any);
+        setTotalSeats(String(existing.totalSeats ?? 4));
+        if (existing.services) {
+          setServices(existing.services.map(s => ({
+            id: s._id,
+            name: s.name,
+            durationMinutes: s.duration,
+            priceInr: s.price,
+          })));
+        }
+        if (existing.location?.coordinates) {
+          setLatitude(String(existing.location.coordinates[1]));
+          setLongitude(String(existing.location.coordinates[0]));
+        }
       }
       setLoading(false);
     }
@@ -97,8 +123,7 @@ export function SalonSetupScreen() {
     setFetchingLocation(true);
     const coords = await ensureCoords({ offerOpenSettings: true });
     setFetchingLocation(false);
-    if (!coords) return; // user denied; alert already shown if applicable
-    // Round to 6 decimals (~11 cm precision) for clean display, plenty for routing.
+    if (!coords) return; 
     setLatitude(coords.latitude.toFixed(6));
     setLongitude(coords.longitude.toFixed(6));
   }
@@ -106,8 +131,8 @@ export function SalonSetupScreen() {
   async function handleSave() {
     if (!user) return;
 
-    if (!name.trim() || !address.trim()) {
-      Alert.alert('Missing Fields', 'Please fill in salon name and address.');
+    if (!name.trim() || !street.trim() || !city.trim() || !state.trim() || !zipCode.trim()) {
+      Alert.alert('Missing Fields', 'Please fill in salon name and full address.');
       return;
     }
     if (services.length === 0) {
@@ -116,25 +141,67 @@ export function SalonSetupScreen() {
     }
 
     setSaving(true);
-    const result = await upsertSalon({
-      salonId: salon.salonId,
-      ownerId: user.uid,
+    const payload = {
       name: sanitizeName(name),
-      address: sanitizeText(address),
       phone: phone.replace(/\D/g, '').substring(0, 10),
       category,
       totalSeats: sanitizeSeats(parseInt(totalSeats, 10)),
-      services,
-      latitude: parseFloat(latitude) || 0,
-      longitude: parseFloat(longitude) || 0,
-    });
+      address: {
+        street: sanitizeText(street),
+        city: sanitizeText(city),
+        state: sanitizeText(state),
+        zipCode: sanitizeText(zipCode),
+        country: 'India',
+      },
+      location: {
+        type: 'Point' as const,
+        coordinates: [parseFloat(longitude) || 73.8567, parseFloat(latitude) || 18.5204] as [number, number],
+      },
+    };
+
+    const result = await upsertMySalon(payload);
 
     if (result.error) {
       Alert.alert('Save Failed', result.error);
     } else {
+      const savedSalon = result.data;
+      if (savedSalon && savedSalon._id) {
+        // Sync services: Fetch current services in DB
+        const currentDb = await apiClient.get(`/services/salons/${savedSalon._id}/services`).catch(() => ({ data: { data: [] } }));
+        const dbServices: any[] = currentDb.data?.data ?? [];
+
+        // Delete removed services
+        for (const dbSvc of dbServices) {
+          const stillExists = services.some(s => s.id === dbSvc._id);
+          if (!stillExists) {
+            await apiClient.delete(`/services/${dbSvc._id}`).catch(err => console.error('Delete service error:', err));
+          }
+        }
+
+        // Add new services
+        const hex24Regex = /^[0-9a-fA-F]{24}$/;
+        for (const localSvc of services) {
+          const isNew = !hex24Regex.test(localSvc.id);
+          if (isNew) {
+            await apiClient.post(`/services/salons/${savedSalon._id}/services`, {
+              name: localSvc.name,
+              price: localSvc.priceInr,
+              duration: localSvc.durationMinutes,
+              description: localSvc.name,
+            }).catch(err => console.error('Create service error:', err));
+          }
+        }
+      }
+
       Alert.alert('Saved!', 'Your salon profile has been saved. An admin will verify it shortly.');
-      if (!salon.salonId && result.data) {
-        setSalon(prev => ({ ...prev, salonId: result.data }));
+      if (savedSalon) {
+        setSalon({
+          salonId: savedSalon._id,
+          name: savedSalon.name,
+          phone: savedSalon.phone,
+          category: savedSalon.category as any,
+          totalSeats: savedSalon.totalSeats,
+        });
       }
     }
     setSaving(false);
@@ -175,12 +242,36 @@ export function SalonSetupScreen() {
             autoCapitalize="words"
           />
           <Input
-            label={Strings.salonSetup.address}
-            value={address}
-            onChangeText={setAddress}
-            placeholder="Full salon address"
-            multiline
-            numberOfLines={2}
+            label="Street Address"
+            value={street}
+            onChangeText={setStreet}
+            placeholder="e.g. Shop 12, Main Road"
+          />
+          <View style={{ flexDirection: 'row', gap: Spacing[2] }}>
+            <View style={{ flex: 1 }}>
+              <Input
+                label="City"
+                value={city}
+                onChangeText={setCity}
+                placeholder="e.g. Pune"
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Input
+                label="State"
+                value={state}
+                onChangeText={setState}
+                placeholder="e.g. Maharashtra"
+              />
+            </View>
+          </View>
+          <Input
+            label="Zip Code"
+            value={zipCode}
+            onChangeText={setZipCode}
+            placeholder="e.g. 411001"
+            keyboardType="number-pad"
+            maxLength={6}
           />
           <Input
             label="Phone Number"

@@ -38,9 +38,9 @@ const TOGGLE_PADDING = 4;
 const TOGGLE_INNER_WIDTH = SCREEN_WIDTH - Spacing[5] * 2 - TOGGLE_PADDING * 2;
 const INDICATOR_WIDTH = TOGGLE_INNER_WIDTH / 2;
 
-const HERO_GRADIENT = ['#0D0000', '#1A237E', '#283593', '#3949AB'] as const;
-const CTA_GRADIENT  = ['#5C6BC0', '#3949AB', '#283593'] as const;
-const CTA_DISABLED  = ['#BDBDBD', '#9E9E9E'] as const;
+const HERO_GRADIENT = ['#0D0000', '#1A237E', '#283593', '#3949AB'];
+const CTA_GRADIENT  = ['#5C6BC0', '#3949AB', '#283593'];
+const CTA_DISABLED  = ['#BDBDBD', '#9E9E9E'];
 
 export function OwnerAuthScreen() {
   const navigation = useNavigation<NavProp>();

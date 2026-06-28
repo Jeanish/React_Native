@@ -42,17 +42,20 @@ export async function sendOtpEmail(email: string, otp: string): Promise<EmailSen
   // If in development or SMTP is not configured, fallback to console logging
   const mailTransporter = getTransporter();
 
-  if (isDevelopment || !mailTransporter) {
+  if (!mailTransporter) {
     logger.info('');
     logger.info('════════════════════════════════════════════════════');
     logger.info(`  EMAIL OTP FOR: ${cleanEmail}  →  ${otp}`);
-    if (!mailTransporter && !isDevelopment) {
+    if (!isDevelopment) {
       logger.warn('[EMAIL] SMTP credentials missing. Logged to console as fallback.');
     }
     logger.info('════════════════════════════════════════════════════');
     logger.info('');
-    return { success: true, provider: mailTransporter ? 'nodemailer' : 'console' };
+    return { success: true, provider: 'console' };
   }
+
+  // Log in console for local debugging but still send the email
+  logger.info(`[Email-DEV] Sending SMTP OTP to ${cleanEmail} → ${otp}`);
 
   try {
     const fromEmail = env.SMTP_FROM_EMAIL || env.SMTP_USER || 'noreply@trimcity.com';

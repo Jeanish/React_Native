@@ -12,6 +12,7 @@ export interface IUser extends Document {
   lastName?: string;
   avatar?: string;
   fcmToken?: string;
+  location?: string;
   isEmailVerified: boolean;
   isPhoneVerified: boolean;
   isActive: boolean;
@@ -58,6 +59,10 @@ const userSchema = new Schema<IUser>(
     },
     fcmToken: {
       type: String,
+    },
+    location: {
+      type: String,
+      trim: true,
     },
     isEmailVerified: {
       type: Boolean,

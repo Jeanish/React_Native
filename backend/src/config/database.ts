@@ -6,7 +6,8 @@ export const connectDatabase = async (): Promise<void> => {
   try {
     const options: mongoose.ConnectOptions = {
       maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 30000,
+      connectTimeoutMS: 30000,
       socketTimeoutMS: 45000,
     };
 

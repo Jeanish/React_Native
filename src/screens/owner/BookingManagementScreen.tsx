@@ -7,7 +7,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   FlatList,
   TouchableOpacity,
@@ -17,6 +16,7 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { Colors, Typography, Spacing, Radius, Shadow } from '../../constants/theme';
 import { Button } from '../../components/ui/Button';
@@ -25,12 +25,13 @@ import { AppointmentBadge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { useAuthStore } from '../../store/authStore';
-import { fetchSalonByOwner } from '../../services/firebase/salon.service';
+import { fetchMySalon, toSalonWithMetaFromApi } from '../../services/api/salon.service';
 import {
-  subscribeToOwnerAppointments,
-  ownerUpdateAppointmentStatus,
-  addWalkIn,
-} from '../../services/firebase/booking.service';
+  fetchSalonAppointments,
+  updateAppointmentStatus,
+  createWalkInAppointment,
+  toAppointmentFromApi,
+} from '../../services/api/booking.service';
 import type { Appointment, Salon } from '../../types';
 import { todayDateString, formatPrice } from '../../utils/formatters';
 import { Strings } from '../../constants/strings';
@@ -46,26 +47,32 @@ export function BookingManagementScreen() {
   const [walkInService, setWalkInService] = useState('');
   const [addingWalkIn, setAddingWalkIn] = useState(false);
 
-  useEffect(() => {
+  async function loadData() {
     if (!user) return;
-    fetchSalonByOwner(user.uid).then(s => {
-      setSalon(s);
-      setLoading(false);
-    });
+    const res = await fetchMySalon();
+    if (res.data) {
+      const mapped = toSalonWithMetaFromApi(res.data);
+      setSalon(mapped);
+
+      const today = todayDateString();
+      const apptsRes = await fetchSalonAppointments({ date: today });
+      if (apptsRes.data) {
+        setAppointments(apptsRes.data.map(toAppointmentFromApi));
+      }
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    loadData();
+
+    // Auto-refresh appointments list every 15 seconds
+    const interval = setInterval(loadData, 15000);
+    return () => clearInterval(interval);
   }, [user?.uid]);
 
-  useEffect(() => {
-    if (!salon) return;
-    const unsub = subscribeToOwnerAppointments(
-      salon.salonId,
-      todayDateString(),
-      appts => setAppointments(appts),
-    );
-    return () => unsub();
-  }, [salon?.salonId]);
-
   async function handleAction(appt: Appointment, action: 'confirmed' | 'cancelled') {
-    if (!salon || !user) return;
+    if (!salon) return;
     Alert.alert(
       action === 'confirmed' ? 'Confirm Booking?' : 'Reject Booking?',
       `${appt.customerName} — ${appt.service} at ${appt.timeSlot}`,
@@ -75,10 +82,12 @@ export function BookingManagementScreen() {
           text: action === 'confirmed' ? 'Confirm' : 'Reject',
           style: action === 'cancelled' ? 'destructive' : 'default',
           onPress: async () => {
-            const result = await ownerUpdateAppointmentStatus(
-              appt.appointmentId, user.uid, salon.salonId, action,
-            );
-            if (result.error) Alert.alert('Error', result.error);
+            const result = await updateAppointmentStatus(appt.appointmentId, action);
+            if (result.error) {
+              Alert.alert('Error', result.error);
+            } else {
+              loadData();
+            }
           },
         },
       ],
@@ -86,16 +95,27 @@ export function BookingManagementScreen() {
   }
 
   async function handleAddWalkIn() {
-    if (!salon || !user) return;
+    if (!salon) return;
     if (!walkInName.trim() || !walkInService.trim()) {
       Alert.alert('Missing Info', 'Please fill in name and service.');
       return;
     }
+    const matchedSvc = salon.services.find(
+      s => s.name.toLowerCase() === walkInService.trim().toLowerCase()
+    );
+    if (!matchedSvc) {
+      Alert.alert('Invalid Service', 'Please select one of the services from the list.');
+      return;
+    }
     setAddingWalkIn(true);
-    const result = await addWalkIn(salon.salonId, user.uid, {
-      customerName: walkInName,
-      customerPhone: walkInPhone,
-      service: walkInService,
+    const now = new Date();
+    const startTime24 = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const result = await createWalkInAppointment({
+      customerName: walkInName.trim(),
+      customerPhone: walkInPhone.trim(),
+      serviceId: matchedSvc.id,
+      appointmentDate: todayDateString(),
+      startTime: startTime24,
     });
     if (result.error) {
       Alert.alert('Error', result.error);
@@ -104,6 +124,7 @@ export function BookingManagementScreen() {
       setWalkInName('');
       setWalkInPhone('');
       setWalkInService('');
+      loadData();
     }
     setAddingWalkIn(false);
   }

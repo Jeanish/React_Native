@@ -12,6 +12,11 @@ const PROD_URL = 'https://react-native-n4qn.onrender.com/api/v1';
 
 export const API_BASE_URL = ENV_API_BASE_URL || (__DEV__ ? FALLBACK_DEV_URL : PROD_URL);
 
+console.log('=============================================');
+console.log('TrimCity API Base URL:', API_BASE_URL);
+console.log('ENV_API_BASE_URL was:', ENV_API_BASE_URL);
+console.log('=============================================');
+
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,

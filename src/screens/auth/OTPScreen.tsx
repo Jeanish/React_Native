@@ -33,14 +33,16 @@ type NavProp      = NativeStackNavigationProp<AuthStackParamList, 'OTP'>;
 type RoutePropType = RouteProp<AuthStackParamList, 'OTP'>;
 
 const RESEND_TIMEOUT = 30;
-const HERO_GRADIENT  = ['#0D0000', '#5C0000', '#B71C1C', '#D32F2F'] as const;
-const CTA_GRADIENT   = ['#EF5350', '#D32F2F', '#B71C1C'] as const;
-const CTA_DISABLED   = ['#BDBDBD', '#9E9E9E'] as const;
+const HERO_GRADIENT  = ['#0D0000', '#5C0000', '#B71C1C', '#D32F2F'];
+const CTA_GRADIENT   = ['#EF5350', '#D32F2F', '#B71C1C'];
+const CTA_DISABLED   = ['#BDBDBD', '#9E9E9E'];
 
 export function OTPScreen() {
   const navigation = useNavigation<NavProp>();
   const route      = useRoute<RoutePropType>();
-  const { email, role } = route.params;
+  const { email, phone, role } = route.params;
+  const target = email ?? phone ?? '';
+  const targetLabel = email ? 'email' : 'number';
 
   const { setUser } = useAuthStore();
 
@@ -144,7 +146,7 @@ export function OTPScreen() {
     setIsVerifying(true);
     setError('');
 
-    const result = await verifyOTP(email, otpCode, role);
+    const result = await verifyOTP(target, otpCode, role);
     if (result.error) {
       setError(result.error);
       verifiedRef.current = false;
@@ -159,7 +161,7 @@ export function OTPScreen() {
     setIsResending(true);
     setError('');
     try {
-      const result = await requestOTP(email);
+      const result = await requestOTP(target);
       if (result.error) {
         setError(result.error);
       } else {
@@ -198,7 +200,7 @@ export function OTPScreen() {
 
           {/* Custom back */}
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
-            <Text style={styles.backText}>← Change email</Text>
+            <Text style={styles.backText}>Change {targetLabel}</Text>
           </TouchableOpacity>
 
           {/* Pulsing icon */}
@@ -212,7 +214,7 @@ export function OTPScreen() {
 
           <Text style={styles.heroTitle}>OTP Sent!</Text>
           <Text style={styles.heroSub}>
-            Sent to <Text style={styles.phoneBold}>{email}</Text>
+            Sent to <Text style={styles.phoneBold}>{target}</Text>
           </Text>
         </Animated.View>
       </SafeAreaView>
@@ -228,7 +230,7 @@ export function OTPScreen() {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}>
 
-            <Text style={styles.cardTitle}>Verify your email</Text>
+            <Text style={styles.cardTitle}>Verify your {targetLabel}</Text>
             <Text style={styles.cardSubtitle}>Enter the 6-digit code below</Text>
 
             {/* ── OTP Boxes ───────────────────────────────────────────── */}
