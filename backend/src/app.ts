@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import compression from 'compression';
 import mongoSanitize from 'express-mongo-sanitize';
+import mongoose from 'mongoose';
 import { env, isDevelopment } from './config/environment';
 import { logger } from './utils/logger';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.middleware';
@@ -59,13 +60,20 @@ if (isDevelopment) {
 
 // Health check endpoint
 app.get('/health', (_req: Request, res: Response) => {
-  res.status(200).json({
-    success: true,
-    message: 'Server is running',
+  const dbState = mongoose.connection.readyState;
+  const dbHealthy = dbState === 1;
+
+  res.status(dbHealthy ? 200 : 503).json({
+    success: dbHealthy,
+    message: dbHealthy ? 'Server is running' : 'Database unavailable',
     data: {
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
       environment: env.NODE_ENV,
+      database: {
+        connected: dbHealthy,
+        state: dbState,
+      },
     },
   });
 });

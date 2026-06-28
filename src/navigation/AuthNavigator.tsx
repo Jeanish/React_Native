@@ -1,15 +1,16 @@
 /**
  * TrimCity — Auth Navigator
- * Stack: Phone → OTP
+ * Stack: Email → OTP (customer) | OwnerAuth (salon owner)
  */
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Colors } from '../constants/theme';
 import type { AuthStackParamList } from '../types';
 
-// Screens (lazy imports for perf)
+// Screens
 import { EmailScreen } from '../screens/auth/EmailScreen';
 import { OTPScreen } from '../screens/auth/OTPScreen';
+import { OwnerAuthScreen } from '../screens/auth/OwnerAuthScreen';
 
 const Stack = createNativeStackNavigator<AuthStackParamList>();
 
@@ -33,6 +34,11 @@ export function AuthNavigator() {
       <Stack.Screen
         name="OTP"
         component={OTPScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="OwnerAuth"
+        component={OwnerAuthScreen}
         options={{ headerShown: false }}
       />
     </Stack.Navigator>

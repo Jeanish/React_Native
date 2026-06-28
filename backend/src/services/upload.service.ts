@@ -3,6 +3,7 @@ import { Request } from 'express';
 import multer from 'multer';
 import { Readable } from 'stream';
 import { env } from '../config/environment';
+import { logger } from '../utils/logger';
 
 // Configure Cloudinary
 cloudinary.config({
@@ -56,7 +57,7 @@ export const deleteFromCloudinary = async (publicId: string): Promise<void> => {
   try {
     await cloudinary.uploader.destroy(publicId);
   } catch (error) {
-    console.error('Error deleting from Cloudinary:', error);
+    logger.error('Error deleting from Cloudinary:', error);
     throw error;
   }
 };

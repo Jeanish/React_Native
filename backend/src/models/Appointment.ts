@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from 'mongoose';
+import { getISTSlotDateTime } from '../utils/timezone';
 
 /**
  * Appointment Status Enum
@@ -185,15 +186,7 @@ appointmentSchema.pre('save', async function (next) {
 
 // Helper to calculate exact UTC Date from stored IST appointment date & start/end time
 function getApptDateTime(appointmentDate: Date, timeStr: string): Date {
-  const d = new Date(appointmentDate);
-  const year = d.getUTCFullYear();
-  const month = d.getUTCMonth();
-  const dateVal = d.getUTCDate();
-  const [hours, minutes] = timeStr.split(':').map(Number);
-  
-  // Construct UTC time for the IST hour/min, then subtract 5.5 hours to get the absolute UTC time
-  const utcMillis = Date.UTC(year, month, dateVal, hours, minutes, 0, 0);
-  return new Date(utcMillis - 330 * 60 * 1000); // 330 mins = 5.5 hours
+  return getISTSlotDateTime(appointmentDate, timeStr);
 }
 
 // Virtual for appointment date-time

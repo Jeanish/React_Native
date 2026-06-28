@@ -17,7 +17,7 @@ export const connectSocket = (): void => {
   const s = getSocket();
   if (!s.connected) {
     s.connect();
-    s.emit('admin:join');
+    s.emit('admin:join', Cookies.get('admin_token'));
   }
 };
 

@@ -52,7 +52,7 @@ export const getAvailableSlots = async (req: Request, res: Response, next: NextF
 
 export const createAppointmentController = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const customerId = req.user?.id;
+    const customerId = req.userId;
     const { salonId, serviceIds, appointmentDate, startTime, notes } = req.body;
 
     if (!salonId || !serviceIds || !appointmentDate || !startTime) {
@@ -84,7 +84,7 @@ export const createAppointmentController = async (req: Request, res: Response, n
 export const getAppointment = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id;
+    const userId = req.userId;
     const userRole = req.user?.role;
 
     const appointment = await getAppointmentById(id, userId!, userRole!);
@@ -102,7 +102,7 @@ export const getAppointment = async (req: Request, res: Response, next: NextFunc
 
 export const getUserAppointments = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const customerId = req.user?.id;
+    const customerId = req.userId;
     const { status, page, limit } = req.query;
 
     const result = await getCustomerAppointments(
@@ -130,7 +130,7 @@ export const getUserAppointments = async (req: Request, res: Response, next: Nex
  */
 export const createWalkInAppointmentController = async (req: Request, res: Response): Promise<void> => {
   try {
-    const ownerId = req.user?.id;
+    const ownerId = req.userId;
     const { customerPhone, customerName, serviceId, appointmentDate, startTime, notes } = req.body;
 
     if (!customerPhone || !/^[6-9]\d{9}$|^0\d{9}$/.test(String(customerPhone).replace(/\D/g, '').slice(-10))) {
@@ -177,7 +177,7 @@ export const createWalkInAppointmentController = async (req: Request, res: Respo
 
 export const getMySalonAppointmentsController = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const userId = req.userId;
     const salon = await Salon.findOne({ ownerId: userId });
     if (!salon) {
       res.status(404).json({ success: false, message: 'You do not have a salon registered' });
@@ -217,7 +217,7 @@ export const getMySalonAppointmentsController = async (req: Request, res: Respon
 export const getSalonAppointmentsController = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { salonId } = req.params;
-    const userId = req.user?.id;
+    const userId = req.userId;
     const { status, startDate, endDate, page, limit } = req.query;
 
     const salon = await Salon.findById(salonId);
@@ -254,7 +254,7 @@ export const getSalonAppointmentsController = async (req: Request, res: Response
 export const confirmAppointmentController = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id;
+    const userId = req.userId;
     const appointment = await confirmAppointment(id, userId!);
     res.status(200).json({ success: true, message: 'Appointment confirmed successfully', data: appointment });
   } catch (error) {
@@ -266,7 +266,7 @@ export const confirmAppointmentController = async (req: Request, res: Response, 
 export const startAppointmentController = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id;
+    const userId = req.userId;
     const appointment = await startAppointment(id, userId!);
     res.status(200).json({ success: true, message: 'Appointment started successfully', data: appointment });
   } catch (error) {
@@ -278,7 +278,7 @@ export const startAppointmentController = async (req: Request, res: Response, ne
 export const completeAppointmentController = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id;
+    const userId = req.userId;
     const { salonNotes } = req.body;
     const appointment = await completeAppointment(id, userId!, salonNotes);
     res.status(200).json({ success: true, message: 'Appointment completed successfully', data: appointment });
@@ -291,7 +291,7 @@ export const completeAppointmentController = async (req: Request, res: Response,
 export const cancelAppointmentController = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id;
+    const userId = req.userId;
     const userRole = req.user?.role;
     const { reason } = req.body;
 
@@ -311,7 +311,7 @@ export const cancelAppointmentController = async (req: Request, res: Response, n
 export const rescheduleAppointmentController = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
-    const customerId = req.user?.id;
+    const customerId = req.userId;
     const { appointmentDate, startTime } = req.body;
 
     if (!appointmentDate || !startTime) {
@@ -330,7 +330,7 @@ export const rescheduleAppointmentController = async (req: Request, res: Respons
 export const markAsNoShowController = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id;
+    const userId = req.userId;
     const appointment = await markAsNoShow(id, userId!);
     res.status(200).json({ success: true, message: 'Appointment marked as no-show', data: appointment });
   } catch (error) {
@@ -341,7 +341,7 @@ export const markAsNoShowController = async (req: Request, res: Response, next: 
 
 export const getUpcomingAppointmentsController = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const customerId = req.user?.id;
+    const customerId = req.userId;
     const { limit } = req.query;
     const appointments = await getUpcomingAppointments(customerId!, limit ? parseInt(limit as string) : undefined);
     res.status(200).json({ success: true, message: 'Upcoming appointments retrieved successfully', data: appointments });

@@ -13,7 +13,9 @@ import {
 import { authenticate } from '../middleware/auth.middleware';
 import { requireRole, requireSalonAdmin } from '../middleware/roleCheck.middleware';
 import { validate } from '../middleware/validation.middleware';
+import { uploadLimiter } from '../middleware/rateLimiter.middleware';
 import { multerUpload } from '../services/upload.service';
+import { FILE_UPLOAD } from '../utils/constants';
 import Joi from 'joi';
 
 const router = Router();
@@ -88,7 +90,7 @@ router.get('/:id', getSalonById);
 router.post('/', authenticate, requireRole('salon_admin', 'super_admin'), validate({ body: createSalonSchema }), createSalon);
 router.put('/:id', authenticate, requireRole('salon_admin', 'super_admin'), validate({ body: updateSalonSchema }), updateSalon);
 
-router.post('/:id/images', authenticate, requireSalonAdmin, multerUpload.array('images', 10), uploadSalonImages);
+router.post('/:id/images', authenticate, requireSalonAdmin, uploadLimiter, multerUpload.array('images', FILE_UPLOAD.MAX_IMAGES_PER_SALON), uploadSalonImages);
 router.delete('/:id/images/:imageId', authenticate, requireSalonAdmin, deleteSalonImage);
 
 export default router;

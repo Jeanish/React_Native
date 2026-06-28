@@ -14,9 +14,10 @@ export const SALON_STATUS = {
 export const APPOINTMENT_STATUS = {
   PENDING: 'pending',
   CONFIRMED: 'confirmed',
+  IN_PROGRESS: 'in-progress',
   COMPLETED: 'completed',
   CANCELLED: 'cancelled',
-  NO_SHOW: 'no_show',
+  NO_SHOW: 'no-show',
 } as const;
 
 export const QUEUE_STATUS = {

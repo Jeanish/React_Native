@@ -13,7 +13,7 @@ import {
   Easing,
   ActivityIndicator,
   Dimensions,
-  Alert,
+
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
@@ -22,7 +22,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { AuthStackParamList, UserRole } from '../../types';
 import { Colors, Typography, Spacing, Radius, Shadow } from '../../constants/theme';
 import { Strings } from '../../constants/strings';
-import { requestOTP, googleSignIn } from '../../services/auth/auth.service';
+import { requestOTP } from '../../services/auth/auth.service';
 import { useAuthStore } from '../../store/authStore';
 
 type NavProp = NativeStackNavigationProp<AuthStackParamList, 'Email'>;
@@ -37,6 +37,8 @@ const HERO_GRADIENT = ['#0D0000', '#5C0000', '#B71C1C', '#D32F2F'] as const;
 const CTA_GRADIENT  = ['#EF5350', '#D32F2F', '#B71C1C'] as const;
 const CTA_DISABLED  = ['#BDBDBD', '#9E9E9E'] as const;
 
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export function EmailScreen() {
   const navigation = useNavigation<NavProp>();
   const { setUser } = useAuthStore();
@@ -45,7 +47,6 @@ export function EmailScreen() {
   const [role, setRole]         = useState<UserRole>('customer');
   const [error, setError]       = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
 
   // ── Entrance animations ───────────────────────────────────────────────────
@@ -114,9 +115,14 @@ export function EmailScreen() {
     if (error) setError('');
   }
 
-  async function handleSendOTP() {
+  async function handleContinue() {
+    // If owner role is selected, navigate to owner register/login screen
+    if (role === 'owner') {
+      navigation.navigate('OwnerAuth' as any);
+      return;
+    }
+
     const cleaned = email.trim().toLowerCase();
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(cleaned)) {
       setError('Please enter a valid email address.');
       return;
@@ -142,47 +148,8 @@ export function EmailScreen() {
     }
   }
 
-  // "Continue with Google" Authentication handler
-  async function handleGoogleSignIn() {
-    setIsGoogleLoading(true);
-    setError('');
-    try {
-      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-      const userInfo = await GoogleSignin.signIn();
-      const idToken = userInfo.data?.idToken;
-      if (!idToken) {
-        throw new Error('Google Sign-In failed to return an ID token.');
-      }
-
-      const googleCredential = auth.GoogleAuthProvider.credential(idToken);
-      const userCredential = await auth().signInWithCredential(googleCredential);
-      const result = await googleSignIn(role);
-      if (result.error) {
-        setError(result.error);
-        return;
-      }
-      if (result.data) {
-        setUser({
-          uid: result.data.id,
-          phone: result.data.phone ?? '',
-          email: result.data.email ?? '',
-          name: [result.data.firstName, result.data.lastName].filter(Boolean).join(' ') || 'Google User',
-          photoURL: result.data.avatar,
-          role: role,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        });
-      }
-    } catch (err: any) {
-      console.error('[Google Sign-In Error]:', err.message || err);
-      setError('Google Sign-in failed. Please try again.');
-    } finally {
-      setIsGoogleLoading(false);
-    }
-  }
-
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const canSubmit = emailRegex.test(email) && !isLoading;
+  const isOwnerMode = role === 'owner';
+  const canSubmit = isOwnerMode ? !isLoading : (emailRegex.test(email) && !isLoading);
 
   return (
     <View style={styles.root}>
@@ -262,48 +229,54 @@ export function EmailScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* ── Email Input ─────────────────────────────────────────── */}
-            <Text style={styles.inputLabel}>EMAIL ADDRESS</Text>
-            <View
-              style={[
-                styles.inputRow,
-                isFocused && styles.inputRowFocused,
-                !!error   && styles.inputRowError,
-              ]}>
-              <View style={styles.prefix}>
-                <Text style={styles.prefixEmoji}>✉️</Text>
-              </View>
-              <View style={styles.prefixDivider} />
-              <TextInput
-                style={styles.emailInput}
-                value={email}
-                onChangeText={handleEmailChange}
-                placeholder="example@email.com"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                returnKeyType="done"
-                onSubmitEditing={handleSendOTP}
-                onFocus={() => setIsFocused(true)}
-                onBlur={() => setIsFocused(false)}
-              />
-              {emailRegex.test(email) && (
-                <View style={styles.checkBadge}>
-                  <Text style={styles.checkMark}>✓</Text>
+            {/* ── Email Input (hidden for owner mode) ─────────────────── */}
+            {!isOwnerMode && (
+              <>
+                <Text style={styles.inputLabel}>EMAIL ADDRESS</Text>
+                <View
+                  style={[
+                    styles.inputRow,
+                    isFocused && styles.inputRowFocused,
+                    !!error   && styles.inputRowError,
+                  ]}>
+                  <View style={styles.prefix}>
+                    <Text style={styles.prefixEmoji}>✉️</Text>
+                  </View>
+                  <View style={styles.prefixDivider} />
+                  <TextInput
+                    style={styles.emailInput}
+                    value={email}
+                    onChangeText={handleEmailChange}
+                    placeholder="example@email.com"
+                    placeholderTextColor={Colors.textTertiary}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="done"
+                    onSubmitEditing={handleContinue}
+                    onFocus={() => setIsFocused(true)}
+                    onBlur={() => setIsFocused(false)}
+                  />
+                  {emailRegex.test(email) && (
+                    <View style={styles.checkBadge}>
+                      <Text style={styles.checkMark}>✓</Text>
+                    </View>
+                  )}
                 </View>
-              )}
-            </View>
+              </>
+            )}
 
             {error
               ? <Text style={styles.errorText}>{error}</Text>
-              : <Text style={styles.hintText}>We'll send a 6-digit OTP code to verify</Text>
+              : !isOwnerMode
+                ? <Text style={styles.hintText}>We'll send a 6-digit OTP code to verify</Text>
+                : <Text style={styles.hintText}>Register or log in with your salon owner credentials</Text>
             }
 
             {/* ── OTP Button ──────────────────────────────────────────── */}
             <TouchableOpacity
               style={[styles.cta, !canSubmit && styles.ctaDisabled]}
-              onPress={handleSendOTP}
+              onPress={handleContinue}
               disabled={!canSubmit}
               activeOpacity={0.85}>
               <LinearGradient
@@ -313,33 +286,12 @@ export function EmailScreen() {
                 style={styles.ctaGradient}>
                 {isLoading
                   ? <ActivityIndicator color={Colors.white} size="small" />
-                  : <Text style={styles.ctaText}>Get OTP  →</Text>
+                  : <Text style={styles.ctaText}>{isOwnerMode ? 'Continue  →' : 'Get OTP  →'}</Text>
                 }
               </LinearGradient>
             </TouchableOpacity>
 
-            {/* Divider */}
-            <View style={styles.dividerRow}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
-              <View style={styles.dividerLine} />
-            </View>
 
-            {/* ── Google Sign In Button ───────────────────────────────── */}
-            <TouchableOpacity
-              style={styles.googleBtn}
-              onPress={handleGoogleSignIn}
-              disabled={isGoogleLoading}
-              activeOpacity={0.85}>
-              {isGoogleLoading ? (
-                <ActivityIndicator color={Colors.navigationRed} size="small" />
-              ) : (
-                <>
-                  <Text style={styles.googleIcon}> G </Text>
-                  <Text style={styles.googleBtnText}>Continue with Google</Text>
-                </>
-              )}
-            </TouchableOpacity>
 
             {/* Footer */}
             <Text style={styles.footer}>
@@ -548,29 +500,7 @@ const styles = StyleSheet.create({
     fontWeight: Typography.semibold,
   },
 
-  // Google Button
-  googleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    borderRadius: Radius.xl,
-    paddingVertical: 16,
-    backgroundColor: Colors.white,
-    ...Shadow.sm,
-  },
-  googleIcon: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#4285F4',
-    marginRight: 10,
-  },
-  googleBtnText: {
-    fontSize: Typography.base,
-    fontWeight: Typography.bold,
-    color: Colors.textPrimary,
-  },
+
 
   // Footer
   footer: {

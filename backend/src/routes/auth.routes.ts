@@ -21,7 +21,7 @@ import {
   salonLoginSchema,
   refreshTokenSchema,
 } from '../utils/validators';
-import { authLimiter } from '../middleware/rateLimiter.middleware';
+import { authLimiter, otpLimiter } from '../middleware/rateLimiter.middleware';
 
 const router = Router();
 
@@ -37,9 +37,10 @@ router.post(
   verifyFirebase
 );
 
-// Send OTP to phone number (free SMS via backend)
+// Send OTP to email address
 router.post(
   '/send-otp',
+  otpLimiter,
   authLimiter,
   validateBody(sendOtpSchema),
   sendOtp

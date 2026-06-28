@@ -77,7 +77,7 @@ export const markSalonReviewed = async (req: Request, res: Response, next: NextF
 export const approveSalon = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
-    const adminId = req.user?.id;
+    const adminId = req.userId;
 
     const salon = await Salon.findById(id);
 

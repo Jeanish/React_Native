@@ -1,6 +1,8 @@
 import Salon from '../models/Salon';
 import Service from '../models/Service';
 import Appointment, { AppointmentStatus } from '../models/Appointment';
+import { getISTDateString, getISTSlotDateTime } from '../utils/timezone';
+export { getISTSlotDateTime } from '../utils/timezone';
 
 /**
  * Time slot interface
@@ -52,20 +54,17 @@ export const getSalonWorkingHours = async (
   salonId: string,
   date: Date
 ): Promise<{ openTime: string; closeTime: string } | null> => {
-  const salon = await Salon.findById(salonId);
+  const salon = await Salon.findById(salonId).select('isActive status manualClosed workingHours');
 
-  if (!salon || !salon.isActive || salon.status !== 'approved') {
-    throw new Error('Salon not found or not available');
+  if (!salon || !salon.isActive || salon.status !== 'approved' || salon.manualClosed) {
+    return null;
   }
 
-  // Get day of week (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
   const dayOfWeek = date.getDay();
-
-  // Find working hours for this day
   const workingHour = salon.workingHours.find((wh) => wh.day === dayOfWeek);
 
   if (!workingHour || workingHour.isClosed) {
-    return null; // Salon is closed on this day
+    return null;
   }
 
   return {
@@ -141,9 +140,7 @@ const generateTimeSlots = (
 };
 
 /**
- * A slot is unavailable when the number of overlapping bookings reaches the
- * salon's chair/seat capacity. With totalSeats=1 this is the original strict mode;
- * with totalSeats=4 up to 4 concurrent customers can book the same slot.
+ * A slot is unavailable when overlapping bookings reach salon seat capacity.
  */
 const markUnavailableSlots = (
   slots: TimeSlot[],
@@ -167,12 +164,6 @@ export const getAvailableTimeSlots = async (
   serviceId: string,
   date: Date
 ): Promise<TimeSlot[]> => {
-  // Helper to format date in IST YYYY-MM-DD
-  const getISTDateString = (d: Date): string => {
-    const dateIST = new Date(d.getTime() + 330 * 60 * 1000); // 330 mins = 5.5 hours
-    return dateIST.toISOString().split('T')[0];
-  };
-
   const todayStr = getISTDateString(new Date());
   const requestedStr = getISTDateString(new Date(date));
 
@@ -180,7 +171,19 @@ export const getAvailableTimeSlots = async (
     throw new Error('Cannot get slots for past dates');
   }
 
-  // Get service details
+  const salonDoc = await Salon.findById(salonId)
+    .select('totalSeats manualClosed isActive status')
+    .lean();
+
+  if (
+    !salonDoc ||
+    !salonDoc.isActive ||
+    salonDoc.status !== 'approved' ||
+    salonDoc.manualClosed
+  ) {
+    return [];
+  }
+
   const service = await Service.findById(serviceId);
 
   if (!service || !service.isActive || !service.isAvailable) {
@@ -191,7 +194,6 @@ export const getAvailableTimeSlots = async (
     throw new Error('Service does not belong to this salon');
   }
 
-  // Check if date is within advance booking limit in IST
   const maxDate = new Date();
   const maxDateIST = new Date(maxDate.getTime() + 330 * 60 * 1000);
   maxDateIST.setDate(maxDateIST.getDate() + service.maxAdvanceBookingDays);
@@ -203,19 +205,15 @@ export const getAvailableTimeSlots = async (
     );
   }
 
-  // Get salon working hours for this date
   const workingHours = await getSalonWorkingHours(salonId, date);
 
   if (!workingHours) {
-    return []; // Salon is closed on this day
+    return [];
   }
 
-  // Get existing appointments + salon capacity
   const existingAppointments = await getExistingAppointments(salonId, date);
-  const salonDoc = await Salon.findById(salonId).select('totalSeats').lean();
-  const totalSeats = (salonDoc as any)?.totalSeats ?? 1;
+  const totalSeats = salonDoc.totalSeats ?? 1;
 
-  // Generate all possible time slots
   let slots = generateTimeSlots(
     workingHours.openTime,
     workingHours.closeTime,
@@ -223,13 +221,10 @@ export const getAvailableTimeSlots = async (
     service.bufferTime
   );
 
-  // Mark unavailable slots based on capacity
   slots = markUnavailableSlots(slots, existingAppointments, totalSeats);
 
-  // Filter out past slots for today
   if (requestedStr === todayStr) {
     const now = new Date();
-    // Shift current time to IST
     const nowIST = new Date(now.getTime() + 330 * 60 * 1000);
     const minTime = new Date(nowIST.getTime() + service.minAdvanceBookingHours * 60 * 60 * 1000);
     const minTimeDateStr = minTime.toISOString().split('T')[0];
@@ -240,10 +235,7 @@ export const getAvailableTimeSlots = async (
       const minTimeStr = `${minTime.getUTCHours().toString().padStart(2, '0')}:${minTime.getUTCMinutes().toString().padStart(2, '0')}`;
       const minTimeMinutes = timeToMinutes(minTimeStr);
 
-      slots = slots.filter((slot) => {
-        const slotStartMinutes = timeToMinutes(slot.startTime);
-        return slotStartMinutes >= minTimeMinutes;
-      });
+      slots = slots.filter((slot) => timeToMinutes(slot.startTime) >= minTimeMinutes);
     }
   }
 
@@ -272,21 +264,6 @@ export const isTimeSlotAvailable = async (
 };
 
 /**
- * Convert an IST date and time string (HH:MM) to a UTC Date object representing that absolute slot time
- */
-export const getISTSlotDateTime = (date: Date | string, timeStr: string): Date => {
-  const d = new Date(date);
-  const year = d.getUTCFullYear();
-  const month = d.getUTCMonth();
-  const dateVal = d.getUTCDate();
-  const [hours, minutes] = timeStr.split(':').map(Number);
-  
-  // Construct UTC time for the IST hour/min, then subtract 5.5 hours to get the absolute UTC time
-  const utcMillis = Date.UTC(year, month, dateVal, hours, minutes, 0, 0);
-  return new Date(utcMillis - 330 * 60 * 1000); // 330 mins = 5.5 hours
-};
-
-/**
  * Validate appointment time constraints
  */
 export const validateAppointmentTime = async (
@@ -296,7 +273,6 @@ export const validateAppointmentTime = async (
   startTime: string
 ): Promise<{ valid: boolean; error?: string }> => {
   try {
-    // Get service
     const service = await Service.findById(serviceId);
 
     if (!service || !service.isActive || !service.isAvailable) {
@@ -307,7 +283,6 @@ export const validateAppointmentTime = async (
       return { valid: false, error: 'Service does not belong to this salon' };
     }
 
-    // Check if date is in the past
     const now = new Date();
     const appointmentDateTime = getISTSlotDateTime(date, startTime);
 
@@ -315,7 +290,6 @@ export const validateAppointmentTime = async (
       return { valid: false, error: 'Cannot book appointments in the past' };
     }
 
-    // Check minimum advance booking time
     const minBookingTime = new Date(now.getTime() + service.minAdvanceBookingHours * 60 * 60 * 1000);
 
     if (appointmentDateTime < minBookingTime) {
@@ -325,7 +299,6 @@ export const validateAppointmentTime = async (
       };
     }
 
-    // Check maximum advance booking time
     const maxBookingTime = new Date(now.getTime() + service.maxAdvanceBookingDays * 24 * 60 * 60 * 1000);
 
     if (appointmentDateTime > maxBookingTime) {
@@ -335,14 +308,12 @@ export const validateAppointmentTime = async (
       };
     }
 
-    // Check if salon is open
     const workingHours = await getSalonWorkingHours(salonId, date);
 
     if (!workingHours) {
       return { valid: false, error: 'Salon is closed on this day' };
     }
 
-    // Check if time is within working hours
     const startMinutes = timeToMinutes(startTime);
     const endMinutes = startMinutes + service.duration;
     const openMinutes = timeToMinutes(workingHours.openTime);
@@ -355,7 +326,6 @@ export const validateAppointmentTime = async (
       };
     }
 
-    // Check for conflicts
     const isAvailable = await isTimeSlotAvailable(salonId, serviceId, date, startTime);
 
     if (!isAvailable) {

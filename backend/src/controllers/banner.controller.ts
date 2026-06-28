@@ -7,7 +7,7 @@ import { logger } from '../utils/logger';
 
 export const createBanner = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const adminId = req.user?.id;
+    const adminId = req.userId;
     const banner = await Banner.create({ ...req.body, createdBy: adminId });
     logger.info(`Banner created: ${banner._id} by admin ${adminId}`);
     res.status(201).json({ success: true, message: 'Banner created successfully', data: banner });
@@ -119,7 +119,7 @@ export const trackBannerClick = async (req: Request, res: Response, next: NextFu
 
 export const createBrandPartner = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const adminId = req.user?.id;
+    const adminId = req.userId;
     const brand = await BrandPartner.create({ ...req.body, createdBy: adminId });
     logger.info(`BrandPartner created: ${brand._id} (${brand.name})`);
     res.status(201).json({ success: true, message: 'Brand partner created', data: brand });

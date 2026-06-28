@@ -6,6 +6,12 @@ import { User } from '../models/User';
 import { validateAppointmentTime, timeToMinutes, minutesToTime } from './availability.service';
 import { sendToUser } from './notification.service';
 import { logger } from '../utils/logger';
+import { getISTSlotDateTime } from '../utils/timezone';
+import {
+  ACTIVE_APPOINTMENT_STATUSES,
+  buildTimeOverlapFilter,
+  getDayBounds,
+} from '../utils/appointmentQuery';
 
 /** Notify both owner and customer that a new booking exists. */
 async function notifyNewAppointment(appt: IAppointment): Promise<void> {
@@ -142,6 +148,8 @@ export const createAppointment = async (
     const endOfDay = new Date(appointmentDate);
     endOfDay.setHours(23, 59, 59, 999);
 
+    const overlapFilter = buildTimeOverlapFilter(startTime, endTime);
+
     // Check for customer conflicts (customer can't have overlapping appointments)
     const customerConflicts = await Appointment.find({
       customerId,
@@ -149,68 +157,27 @@ export const createAppointment = async (
         $gte: startOfDay,
         $lte: endOfDay,
       },
-      status: {
-        $in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS],
-      },
-      $or: [
-        {
-          $and: [
-            { startTime: { $lte: startTime } },
-            { endTime: { $gt: startTime } },
-          ],
-        },
-        {
-          $and: [
-            { startTime: { $lt: endTime } },
-            { endTime: { $gte: endTime } },
-          ],
-        },
-        {
-          $and: [
-            { startTime: { $gte: startTime } },
-            { endTime: { $lte: endTime } },
-          ],
-        },
-      ],
+      status: { $in: ACTIVE_APPOINTMENT_STATUSES },
+      ...overlapFilter,
     }).session(session);
 
     if (customerConflicts.length > 0) {
       throw new Error('You already have an appointment at this time');
     }
 
-    // Check for salon conflicts (double booking prevention)
+    // Check salon capacity for the selected slot
+    const salonCapacity = Math.max(1, salon.totalSeats ?? 1);
     const salonConflicts = await Appointment.find({
       salonId,
       appointmentDate: {
         $gte: startOfDay,
         $lte: endOfDay,
       },
-      status: {
-        $in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS],
-      },
-      $or: [
-        {
-          $and: [
-            { startTime: { $lte: startTime } },
-            { endTime: { $gt: startTime } },
-          ],
-        },
-        {
-          $and: [
-            { startTime: { $lt: endTime } },
-            { endTime: { $gte: endTime } },
-          ],
-        },
-        {
-          $and: [
-            { startTime: { $gte: startTime } },
-            { endTime: { $lte: endTime } },
-          ],
-        },
-      ],
+      status: { $in: ACTIVE_APPOINTMENT_STATUSES },
+      ...overlapFilter,
     }).session(session);
 
-    if (salonConflicts.length > 0) {
+    if (salonConflicts.length >= salonCapacity) {
       throw new Error('Selected time slot is no longer available');
     }
 
@@ -488,10 +455,8 @@ export const cancelAppointment = async (
 
   // Check cancellation policy (24 hours before appointment)
   if (isCustomer) {
-    const now = new Date();
-    const appointmentDateTime = appointment.appointmentDateTime;
-
-    const hoursDifference = (appointmentDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+    const appointmentDateTime = getISTSlotDateTime(appointment.appointmentDate, appointment.startTime);
+    const hoursDifference = (appointmentDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
 
     if (hoursDifference < 24) {
       throw new Error('Cannot cancel appointment less than 24 hours before scheduled time');
@@ -539,10 +504,11 @@ export const rescheduleAppointment = async (
     }
 
     // Check if can reschedule (at least 24 hours before current appointment)
-    const now = new Date();
-    const currentAppointmentDateTime = appointment.appointmentDateTime;
-
-    const hoursDifference = (currentAppointmentDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+    const currentAppointmentDateTime = getISTSlotDateTime(
+      appointment.appointmentDate,
+      appointment.startTime
+    );
+    const hoursDifference = (currentAppointmentDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
 
     if (hoursDifference < 24) {
       throw new Error('Cannot reschedule appointment less than 24 hours before scheduled time');
@@ -568,12 +534,9 @@ export const rescheduleAppointment = async (
     const endMinutes = startMinutes + appointment.totalDuration;
     const endTime = minutesToTime(endMinutes);
 
-    const startOfDay = new Date(appointmentDate);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(appointmentDate);
-    endOfDay.setHours(23, 59, 59, 999);
+    const { startOfDay, endOfDay } = getDayBounds(appointmentDate);
+    const overlapFilter = buildTimeOverlapFilter(startTime, endTime);
 
-    // Check for conflicts at new time
     const conflicts = await Appointment.find({
       _id: { $ne: appointmentId },
       salonId: appointment.salonId,
@@ -581,29 +544,8 @@ export const rescheduleAppointment = async (
         $gte: startOfDay,
         $lte: endOfDay,
       },
-      status: {
-        $in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS],
-      },
-      $or: [
-        {
-          $and: [
-            { startTime: { $lte: startTime } },
-            { endTime: { $gt: startTime } },
-          ],
-        },
-        {
-          $and: [
-            { startTime: { $lt: endTime } },
-            { endTime: { $gte: endTime } },
-          ],
-        },
-        {
-          $and: [
-            { startTime: { $gte: startTime } },
-            { endTime: { $lte: endTime } },
-          ],
-        },
-      ],
+      status: { $in: ACTIVE_APPOINTMENT_STATUSES },
+      ...overlapFilter,
     }).session(session);
 
     if (conflicts.length > 0) {
@@ -653,7 +595,7 @@ export const markAsNoShow = async (
   }
 
   // Check if appointment time has passed
-  const appointmentDateTime = appointment.appointmentDateTime;
+  const appointmentDateTime = getISTSlotDateTime(appointment.appointmentDate, appointment.startTime);
 
   if (appointmentDateTime > new Date()) {
     throw new Error('Cannot mark future appointment as no-show');
@@ -661,6 +603,9 @@ export const markAsNoShow = async (
 
   appointment.status = AppointmentStatus.NO_SHOW;
   await appointment.save();
+  notifyStatusChange(appointment, AppointmentStatus.NO_SHOW).catch(err =>
+    logger.warn('notifyStatusChange failed:', err?.message ?? err),
+  );
 
   return appointment;
 };

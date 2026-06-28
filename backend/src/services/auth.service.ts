@@ -4,7 +4,35 @@ import { RefreshToken } from '../models/RefreshToken';
 import { generateTokenPair, verifyRefreshToken, JWTPayload } from '../utils/jwt';
 import { USER_ROLES, ERROR_MESSAGES } from '../utils/constants';
 import { logger } from '../utils/logger';
-import { env } from '../config/environment';
+import { env, isDevelopment } from '../config/environment';
+import { parseDurationToDate } from '../utils/duration';
+
+const storeRefreshToken = async (
+  userId: mongoose.Types.ObjectId,
+  token: string
+): Promise<void> => {
+  await RefreshToken.create({
+    token,
+    userId,
+    expiresAt: parseDurationToDate(env.JWT_REFRESH_EXPIRES_IN),
+    isRevoked: false,
+  });
+};
+
+export const issueTokensForUser = async (
+  user: IUser
+): Promise<{ accessToken: string; refreshToken: string }> => {
+  const payload: JWTPayload = {
+    userId: user._id.toString(),
+    role: user.role,
+    email: user.email,
+    phone: user.phone,
+  };
+
+  const tokens = generateTokenPair(payload);
+  await storeRefreshToken(user._id, tokens.refreshToken);
+  return tokens;
+};
 
 /**
  * Register a new customer via OTP
@@ -26,14 +54,14 @@ export const registerCustomer = async (
       }
       user.isPhoneVerified = true;
       user.lastLogin = new Date();
-      // Heal stale salon_admin/super_admin records missing email/password
+      // Dev-only: heal stale admin records missing email/password
       if (
+        isDevelopment &&
         (user.role === USER_ROLES.SALON_ADMIN || user.role === USER_ROLES.SUPER_ADMIN) &&
         (!user.email || !user.password)
       ) {
-        const bcrypt = await import('bcryptjs');
         if (!user.email) user.email = `dev-${phone}@trimcity.local`;
-        if (!user.password) user.password = await bcrypt.default.hash('DevPassword@1234', 12);
+        if (!user.password) user.password = 'DevPassword@1234';
       }
       await user.save();
     } else {
@@ -51,26 +79,7 @@ export const registerCustomer = async (
     }
 
     // Generate tokens
-    const payload: JWTPayload = {
-      userId: user._id.toString(),
-      role: user.role,
-      phone: user.phone,
-    };
-
-    const tokens = generateTokenPair(payload);
-
-    // Store refresh token
-    const refreshTokenExpiry = new Date();
-    refreshTokenExpiry.setDate(
-      refreshTokenExpiry.getDate() + parseInt(env.JWT_REFRESH_EXPIRES_IN)
-    );
-
-    await RefreshToken.create({
-      token: tokens.refreshToken,
-      userId: user._id,
-      expiresAt: refreshTokenExpiry,
-      isRevoked: false,
-    });
+    const tokens = await issueTokensForUser(user);
 
     logger.info(`Customer registered/logged in: ${user._id}`);
 
@@ -124,27 +133,7 @@ export const registerCustomerByEmail = async (
       });
     }
 
-    // Generate tokens
-    const payload: JWTPayload = {
-      userId: user._id.toString(),
-      role: user.role,
-      email: user.email,
-    };
-
-    const tokens = generateTokenPair(payload);
-
-    // Store refresh token
-    const refreshTokenExpiry = new Date();
-    refreshTokenExpiry.setDate(
-      refreshTokenExpiry.getDate() + parseInt(env.JWT_REFRESH_EXPIRES_IN)
-    );
-
-    await RefreshToken.create({
-      token: tokens.refreshToken,
-      userId: user._id,
-      expiresAt: refreshTokenExpiry,
-      isRevoked: false,
-    });
+    const tokens = await issueTokensForUser(user);
 
     logger.info(`Customer registered/logged in via email: ${user._id}`);
 
@@ -193,27 +182,7 @@ export const registerSalonAdmin = async (data: {
       lastLogin: new Date(),
     });
 
-    // Generate tokens
-    const payload: JWTPayload = {
-      userId: user._id.toString(),
-      role: user.role,
-      email: user.email,
-    };
-
-    const tokens = generateTokenPair(payload);
-
-    // Store refresh token
-    const refreshTokenExpiry = new Date();
-    refreshTokenExpiry.setDate(
-      refreshTokenExpiry.getDate() + parseInt(env.JWT_REFRESH_EXPIRES_IN)
-    );
-
-    await RefreshToken.create({
-      token: tokens.refreshToken,
-      userId: user._id,
-      expiresAt: refreshTokenExpiry,
-      isRevoked: false,
-    });
+    const tokens = await issueTokensForUser(user);
 
     logger.info(`Salon admin registered: ${user._id}`);
 
@@ -254,33 +223,9 @@ export const loginSalonAdmin = async (
     user.lastLogin = new Date();
     await user.save();
 
-    // Generate tokens
-    const payload: JWTPayload = {
-      userId: user._id.toString(),
-      role: user.role,
-      email: user.email,
-    };
-
-    const tokens = generateTokenPair(payload);
-
-    // Store refresh token
-    const refreshTokenExpiry = new Date();
-    refreshTokenExpiry.setDate(
-      refreshTokenExpiry.getDate() + parseInt(env.JWT_REFRESH_EXPIRES_IN)
-    );
-
-    await RefreshToken.create({
-      token: tokens.refreshToken,
-      userId: user._id,
-      expiresAt: refreshTokenExpiry,
-      isRevoked: false,
-    });
+    const tokens = await issueTokensForUser(user);
 
     logger.info(`Salon admin logged in: ${user._id}`);
-
-    // Remove password from response
-    const userResponse = user.toJSON();
-    delete (userResponse as any).password;
 
     return { user, tokens };
   } catch (error) {
@@ -320,31 +265,15 @@ export const refreshAccessToken = async (
       throw new Error(ERROR_MESSAGES.USER_NOT_FOUND);
     }
 
-    // Generate new token pair
-    const payload: JWTPayload = {
+    const tokens = generateTokenPair({
       userId: user._id.toString(),
       role: user.role,
       email: user.email,
       phone: user.phone,
-    };
-
-    const tokens = generateTokenPair(payload);
-
-    // Revoke old refresh token
-    await tokenRecord.revoke();
-
-    // Store new refresh token
-    const refreshTokenExpiry = new Date();
-    refreshTokenExpiry.setDate(
-      refreshTokenExpiry.getDate() + parseInt(env.JWT_REFRESH_EXPIRES_IN)
-    );
-
-    await RefreshToken.create({
-      token: tokens.refreshToken,
-      userId: user._id,
-      expiresAt: refreshTokenExpiry,
-      isRevoked: false,
     });
+
+    await tokenRecord.revoke();
+    await storeRefreshToken(user._id, tokens.refreshToken);
 
     logger.info(`Access token refreshed for user: ${user._id}`);
 
@@ -441,6 +370,7 @@ export const updateFCMToken = async (
 };
 
 export default {
+  issueTokensForUser,
   registerCustomer,
   registerCustomerByEmail,
   registerSalonAdmin,

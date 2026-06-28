@@ -1,7 +1,7 @@
 import http from 'http';
 import app from './app';
 import { env } from './config/environment';
-import { connectDatabase } from './config/database';
+import { connectDatabase, disconnectDatabase } from './config/database';
 import { initializeFirebase } from './config/firebase';
 import { logger } from './utils/logger';
 import { initSocket } from './socket';
@@ -13,7 +13,6 @@ const startServer = async (): Promise<void> => {
     await connectDatabase();
     initializeFirebase();
 
-    // Initialize Socket.io — admin panel connects to this
     initSocket(server, env.CORS_ORIGIN.split(','));
 
     server.listen(env.PORT, () => {
@@ -38,10 +37,11 @@ const startServer = async (): Promise<void> => {
   }
 };
 
-const gracefulShutdown = (signal: string): void => {
+const gracefulShutdown = async (signal: string): Promise<void> => {
   logger.info(`${signal} received. Starting graceful shutdown...`);
-  server.close(() => {
+  server.close(async () => {
     logger.info('HTTP server closed');
+    await disconnectDatabase();
     process.exit(0);
   });
   setTimeout(() => {
@@ -50,8 +50,8 @@ const gracefulShutdown = (signal: string): void => {
   }, 10000);
 };
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => { void gracefulShutdown('SIGTERM'); });
+process.on('SIGINT', () => { void gracefulShutdown('SIGINT'); });
 process.on('uncaughtException', (error: Error) => {
   logger.error('Uncaught Exception:', error);
   process.exit(1);

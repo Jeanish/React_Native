@@ -5,10 +5,11 @@ import { uploadToCloudinary, deleteFromCloudinary } from '../services/upload.ser
 import { searchSalons, getNearbySalons, getPopularSalons } from '../services/search.service';
 import { logger } from '../utils/logger';
 import { emitSalonRegistered } from '../socket';
+import { FILE_UPLOAD } from '../utils/constants';
 
 export const createSalon = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const userId = req.userId!;
     logger.info(`createSalon: user ${userId} attempting to create salon`);
 
     const existingSalon = await Salon.findOne({ ownerId: userId });
@@ -92,7 +93,7 @@ export const getSalonById = async (req: Request, res: Response, next: NextFuncti
 
 export const getMySalon = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const userId = req.user?.id;
+    const userId = req.userId!;
     const salon = await Salon.findOne({ ownerId: userId })
       .populate('ownerId', 'firstName lastName email phone')
       .populate('categoryId', 'name slug icon description');
@@ -112,7 +113,7 @@ export const getMySalon = async (req: Request, res: Response, next: NextFunction
 export const updateSalon = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id;
+    const userId = req.userId!;
 
     const salon = await Salon.findById(id);
     if (!salon) {
@@ -156,7 +157,7 @@ export const updateSalon = async (req: Request, res: Response, next: NextFunctio
 export const uploadSalonImages = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id;
+    const userId = req.userId!;
     const files = req.files as Express.Multer.File[];
 
     if (!files || files.length === 0) {
@@ -172,6 +173,14 @@ export const uploadSalonImages = async (req: Request, res: Response, next: NextF
 
     if (salon.ownerId.toString() !== userId) {
       res.status(403).json({ success: false, message: 'You are not authorized to upload images for this salon' });
+      return;
+    }
+
+    if (salon.images.length + files.length > FILE_UPLOAD.MAX_IMAGES_PER_SALON) {
+      res.status(400).json({
+        success: false,
+        message: `Maximum ${FILE_UPLOAD.MAX_IMAGES_PER_SALON} images allowed per salon`,
+      });
       return;
     }
 
@@ -201,7 +210,7 @@ export const uploadSalonImages = async (req: Request, res: Response, next: NextF
 export const deleteSalonImage = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id, imageId } = req.params;
-    const userId = req.user?.id;
+    const userId = req.userId!;
 
     const salon = await Salon.findById(id);
     if (!salon) {

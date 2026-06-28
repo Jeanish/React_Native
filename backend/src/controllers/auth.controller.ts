@@ -9,7 +9,6 @@ import {
   logout,
 } from '../services/auth.service';
 import { createOTP, verifyOTP as verifyOtpService } from '../services/otp.service';
-import { sendOtpSms } from '../services/sms.service';
 import { sendOtpEmail } from '../services/email.service';
 import { sendSuccess, sendError, sendUnauthorized } from '../utils/response';
 import { SUCCESS_MESSAGES, ERROR_MESSAGES } from '../utils/constants';
@@ -23,7 +22,7 @@ import { isTempEmail } from '../utils/tempMailBlocker';
  */
 export const verifyFirebase = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
-    const { idToken, fcmToken, firstName, lastName, role } = req.body;
+    const { idToken, fcmToken, firstName, lastName } = req.body;
 
     // Verify Firebase token
     let decodedToken;
@@ -65,23 +64,6 @@ export const verifyFirebase = asyncHandler(
       const regResult = await registerCustomer(phone!, fcmToken, firstName, lastName);
       user = regResult.user;
       tokens = regResult.tokens;
-    }
-
-    // Apply requested role if provided and different from current role
-    const roleMap: Record<string, string> = { owner: 'salon_admin', customer: 'customer' };
-    const dbRole = roleMap[role] ?? role;
-    if (dbRole && user.role !== dbRole) {
-      user.role = dbRole as any;
-      if (dbRole === 'salon_admin' && !user.email) {
-        user.email = email || `salon-${phone}@trimcity.local`;
-      }
-      await user.save();
-      // Regenerate tokens with updated role
-      const { generateTokenPair } = await import('../utils/jwt');
-      const payload = { userId: user._id.toString(), role: user.role, phone: user.phone, email: user.email };
-      const newTokens = generateTokenPair(payload);
-      tokens.accessToken = newTokens.accessToken;
-      tokens.refreshToken = newTokens.refreshToken;
     }
 
     logger.info(`Customer logged in successfully: ${user._id}`);
@@ -135,7 +117,7 @@ export const sendOtp = asyncHandler(
  */
 export const verifyOtp = asyncHandler(
   async (req: Request, res: Response): Promise<void> => {
-    const { email, otp, role, fcmToken } = req.body;
+    const { email, otp, fcmToken } = req.body;
 
     const verification = await verifyOtpService(email, otp);
     if (!verification.isValid) {
@@ -144,21 +126,6 @@ export const verifyOtp = asyncHandler(
     }
 
     const { user, tokens } = await registerCustomerByEmail(email, fcmToken);
-
-    const roleMap: Record<string, string> = { owner: 'salon_admin', customer: 'customer' };
-    const dbRole = roleMap[role] ?? role;
-    if (dbRole && user.role !== dbRole) {
-      user.role = dbRole as any;
-      if (dbRole === 'salon_admin' && !user.email) {
-        user.email = email;
-      }
-      await user.save();
-      const { generateTokenPair } = await import('../utils/jwt');
-      const payload = { userId: user._id.toString(), role: user.role, email: user.email, phone: user.phone };
-      const newTokens = generateTokenPair(payload);
-      tokens.accessToken = newTokens.accessToken;
-      tokens.refreshToken = newTokens.refreshToken;
-    }
 
     logger.info(`User verified via OTP: ${user._id}`);
     sendSuccess(
@@ -376,8 +343,7 @@ export const devPhoneLogin = asyncHandler(
       return;
     }
     
-    const { registerCustomer, registerCustomerByEmail } = await import('../services/auth.service');
-    const bcrypt = await import('bcryptjs');
+    const { registerCustomer, registerCustomerByEmail, issueTokensForUser } = await import('../services/auth.service');
     
     let result;
     if (email) {
@@ -385,16 +351,18 @@ export const devPhoneLogin = asyncHandler(
     } else {
       result = await registerCustomer(phone!, undefined, 'Dev', 'User');
     }
-    const { user, tokens } = result;
+    const { user } = result;
+    let { tokens } = result;
 
-    // Update role if needed — salon_admin requires email + password
+    // Update role if needed — salon_admin requires email + password (dev only)
     if (user.role !== mappedRole) {
       user.role = mappedRole as any;
       if (mappedRole === 'salon_admin') {
         if (!user.email) user.email = email || `dev-${phone}@trimcity.local`;
-        if (!user.password) user.password = await bcrypt.hash('DevPassword@1234', 12);
+        if (!user.password) user.password = 'DevPassword@1234';
       }
       await user.save();
+      tokens = await issueTokensForUser(user);
     }
 
     // Self-heal: if this phone or email has an orphan salon (previous user was wiped),

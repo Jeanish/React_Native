@@ -37,8 +37,16 @@ export function useNotifications() {
       }
     };
 
+    const errorHandler = (err: { message: string }) => {
+      console.warn('[Socket] admin:join auth failed:', err.message);
+    };
+
     socket.on('salon:registered', handler);
-    return () => { socket.off('salon:registered', handler); };
+    socket.on('error', errorHandler);
+    return () => {
+      socket.off('salon:registered', handler);
+      socket.off('error', errorHandler);
+    };
   }, []);
 
   const markAllRead = useCallback(() => {

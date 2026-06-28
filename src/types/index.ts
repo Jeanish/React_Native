@@ -155,6 +155,7 @@ export type RootStackParamList = {
 export type AuthStackParamList = {
   Email: { role?: UserRole };
   OTP: { email: string; verificationId: string; role: UserRole };
+  OwnerAuth: undefined;
 };
 
 export type CustomerTabParamList = {

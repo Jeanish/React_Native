@@ -1,5 +1,7 @@
 import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
+import { verifyAccessToken } from '../utils/jwt';
+import { USER_ROLES } from '../utils/constants';
 import { logger } from '../utils/logger';
 
 let io: Server | null = null;
@@ -13,9 +15,23 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string[]): Server
   io.on('connection', (socket: Socket) => {
     logger.info(`Socket connected: ${socket.id}`);
 
-    socket.on('admin:join', () => {
-      socket.join('admins');
-      logger.info(`Admin joined room: ${socket.id}`);
+    socket.on('admin:join', (token?: string) => {
+      if (!token || typeof token !== 'string') {
+        socket.emit('error', { message: 'Authentication token required' });
+        return;
+      }
+
+      try {
+        const decoded = verifyAccessToken(token);
+        if (decoded.role !== USER_ROLES.SUPER_ADMIN) {
+          socket.emit('error', { message: 'Super admin access required' });
+          return;
+        }
+        socket.join('admins');
+        logger.info(`Super admin joined room: ${socket.id}`);
+      } catch {
+        socket.emit('error', { message: 'Invalid or expired token' });
+      }
     });
 
     socket.on('disconnect', () => {

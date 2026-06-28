@@ -19,7 +19,7 @@ export async function fetchCurrentUserProfile(): Promise<ServiceResult<AppUser>>
       phone: u.phone ?? '',
       name: [u.firstName, u.lastName].filter(Boolean).join(' ') || '',
       photoURL: u.avatar,
-      role: (u.role === 'salon_admin' ? 'owner' : u.role) as UserRole,
+      role: (u.role === 'salon_admin' ? 'owner' : u.role === 'super_admin' ? 'admin' : u.role) as UserRole,
       createdAt: new Date(u.createdAt).getTime(),
       updatedAt: new Date(u.createdAt).getTime(),
     };

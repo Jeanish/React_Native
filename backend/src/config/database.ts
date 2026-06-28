@@ -26,13 +26,6 @@ export const connectDatabase = async (): Promise<void> => {
     mongoose.connection.on('reconnected', () => {
       logger.info('MongoDB reconnected successfully');
     });
-
-    // Graceful shutdown
-    process.on('SIGINT', async () => {
-      await mongoose.connection.close();
-      logger.info('MongoDB connection closed due to app termination');
-      process.exit(0);
-    });
   } catch (error) {
     logger.error('❌ MongoDB connection failed:', error);
     process.exit(1);

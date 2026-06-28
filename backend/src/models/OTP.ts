@@ -3,7 +3,8 @@ import { OTP_CONFIG } from '../utils/constants';
 
 export interface IOTP extends Document {
   _id: mongoose.Types.ObjectId;
-  phone: string;
+  phone?: string;
+  email?: string;
   otp: string;
   attempts: number;
   expiresAt: Date;

@@ -54,10 +54,10 @@ const citySchema = Joi.object({
   name: Joi.string().required().max(100).trim(),
   state: Joi.string().required().max(100).trim(),
   country: Joi.string().max(100).trim().default('India'),
-  // location: Joi.object({
-  //   type: Joi.string().valid('Point').default('Point'),
-  //   coordinates: Joi.array().items(Joi.number()).length(2).required(),
-  // }).required(),
+  location: Joi.object({
+    type: Joi.string().valid('Point').default('Point'),
+    coordinates: Joi.array().items(Joi.number()).length(2).required(),
+  }).required(),
   isActive: Joi.boolean(),
 });
 

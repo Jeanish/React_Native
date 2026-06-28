@@ -12,6 +12,7 @@ import {
 import { authenticate } from '../middleware/auth.middleware';
 import { requireSalonAdmin } from '../middleware/roleCheck.middleware';
 import { validate } from '../middleware/validation.middleware';
+import { uploadLimiter } from '../middleware/rateLimiter.middleware';
 import { multerUpload } from '../services/upload.service';
 import Joi from 'joi';
 
@@ -60,7 +61,7 @@ router.post('/salons/:salonId/services', authenticate, requireSalonAdmin, valida
 router.put('/:id', authenticate, requireSalonAdmin, validate({ body: updateServiceSchema }), updateService);
 router.delete('/:id', authenticate, requireSalonAdmin, deleteService);
 router.patch('/:id/availability', authenticate, requireSalonAdmin, validate({ body: toggleAvailabilitySchema }), toggleServiceAvailability);
-router.post('/:id/images', authenticate, requireSalonAdmin, multerUpload.array('images', 5), uploadServiceImages);
+router.post('/:id/images', authenticate, requireSalonAdmin, uploadLimiter, multerUpload.array('images', 5), uploadServiceImages);
 router.delete('/:id/images/:imageId', authenticate, requireSalonAdmin, deleteServiceImage);
 
 export default router;

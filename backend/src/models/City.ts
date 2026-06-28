@@ -37,7 +37,7 @@ const citySchema = new Schema<ICity>(
       type: String,
       required: [true, 'Country is required'],
       trim: true,
-      default: 'USA',
+      default: 'India',
     },
     location: {
       type: {

@@ -35,7 +35,7 @@ const envVarsSchema = Joi.object({
   MAX_FILE_SIZE: Joi.number().default(5242880),
   ALLOWED_FILE_TYPES: Joi.string().default('image/jpeg,image/png,image/jpg'),
   LOG_LEVEL: Joi.string().valid('error', 'warn', 'info', 'http', 'debug').default('info'),
-  DB_ENCRYPTION_KEY: Joi.string().required().description('32-byte base64 string for mongoose-field-encryption'),
+  DB_ENCRYPTION_KEY: Joi.string().optional().description('32-byte base64 string for mongoose-field-encryption (optional until enabled)'),
   SMS_API_KEY: Joi.string().optional().description('Fast2SMS API key for OTP SMS (optional in dev — logs to console)'),
 }).unknown();
 

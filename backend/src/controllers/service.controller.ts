@@ -1,13 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
 import Service from '../models/Service';
 import Salon, { ISalon } from '../models/Salon';
+import Appointment, { AppointmentStatus } from '../models/Appointment';
 import { uploadToCloudinary, deleteFromCloudinary } from '../services/upload.service';
 import { logger } from '../utils/logger';
 
 export const createService = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { salonId } = req.params;
-    const userId = req.user?.id;
+    const userId = req.userId;
 
     const salon = await Salon.findById(salonId);
     if (!salon) {
@@ -81,7 +82,7 @@ export const getServiceById = async (req: Request, res: Response, next: NextFunc
 export const updateService = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id;
+    const userId = req.userId;
 
     const service = await Service.findById(id).populate<{ salonId: ISalon }>('salonId');
     if (!service) {
@@ -116,7 +117,7 @@ export const updateService = async (req: Request, res: Response, next: NextFunct
 export const deleteService = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id;
+    const userId = req.userId;
 
     const service = await Service.findById(id).populate<{ salonId: ISalon }>('salonId');
     if (!service) {
@@ -129,12 +130,10 @@ export const deleteService = async (req: Request, res: Response, next: NextFunct
       return;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const AppointmentModel = require('../models/Appointment').default;
-    const futureAppointments = await AppointmentModel.countDocuments({
+    const futureAppointments = await Appointment.countDocuments({
       'services.serviceId': id,
       appointmentDate: { $gte: new Date() },
-      status: { $in: ['pending', 'confirmed'] },
+      status: { $in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED] },
     });
 
     if (futureAppointments > 0) {
@@ -161,7 +160,7 @@ export const deleteService = async (req: Request, res: Response, next: NextFunct
 export const toggleServiceAvailability = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id;
+    const userId = req.userId;
     const { isAvailable } = req.body;
 
     if (typeof isAvailable !== 'boolean') {
@@ -193,7 +192,7 @@ export const toggleServiceAvailability = async (req: Request, res: Response, nex
 export const uploadServiceImages = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id;
+    const userId = req.userId;
     const files = req.files as Express.Multer.File[];
 
     if (!files || files.length === 0) {
@@ -237,7 +236,7 @@ export const uploadServiceImages = async (req: Request, res: Response, next: Nex
 export const deleteServiceImage = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id, imageId } = req.params;
-    const userId = req.user?.id;
+    const userId = req.userId;
 
     const service = await Service.findById(id).populate<{ salonId: ISalon }>('salonId');
     if (!service) {
